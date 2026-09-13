@@ -65,14 +65,6 @@ pwsh -NoProfile -File scripts/windows/bb.ps1 -Action Start
 
 [Полная инструкция: CLI, конфигурация, провайдеры, отдельные экземпляры и обновление](README.windows.md).
 
-## Статус
-
-**Публичный предварительный выпуск из исходников.** Сборка, запуск, восстановление процессов и провайдеры проверены на рабочем Windows-ПК. Готового подписанного Windows-установщика пока нет.
-
-- [Результаты проверок и ограничения](docs/windows-fork-audit.md#implemented-and-verified).
-- [Проверка публикуемой истории на секреты](docs/windows-publication-security.md).
-- [Процедура синхронизации с upstream](README.windows.md#update-and-integrate-upstream).
-
 ## Основа и лицензия
 
 Основа — [get-bb/bb](https://github.com/get-bb/bb). Сохранены история upstream и [лицензия MIT](LICENSE). Этот репозиторий распространяет Windows-доработки; пакеты и desktop-релизы upstream выпускаются отдельно.

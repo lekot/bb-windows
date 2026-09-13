@@ -63,5 +63,4 @@ console.log(await bb.threads.output({ threadId: String(thread.id) }));
 
 - [Поддержка платформ и ограничения](../../docs/platform-support.md).
 - [Рабочие копии Git и хуки окружения](../../docs/worktrees.md).
-- [Результаты Windows-проверок](../../docs/windows-fork-audit.md).
 - [Основной README форка](../../README.md).
