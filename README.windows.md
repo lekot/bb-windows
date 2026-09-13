@@ -159,3 +159,32 @@ secret review. The current checkout's `origin` is not the distribution URL.
 Publishing Git history also publishes deleted files; exclusions from the current
 bundle cannot sanitize historical personal documents or credentials. No publish
 or push command is part of these scripts.
+
+The local `release/windows-candidate` branch has upstream ancestry without the
+old private fork commits. `main` remains the original maintenance history and
+must not be used as the initial publication source. To prepare another snapshot
+from committed maintenance changes, choose a new branch name:
+
+```powershell
+node scripts/windows/prepare-release.mjs release/windows-YYYY-MM-DD
+git worktree add ../bb-windows-release release/windows-YYYY-MM-DD
+cd ../bb-windows-release
+pnpm install --lockfile-only --ignore-scripts
+git add pnpm-lock.yaml
+git commit -m "Refresh release workspace lockfile"
+pwsh -NoProfile -File scripts/windows/install.ps1
+```
+
+Review `release-exclusions.json` and the resulting tree before distribution.
+The script restores excluded areas to the pinned upstream baseline, preserving
+upstream maintenance sources but discarding local experiments there. It creates
+a new ref only and refuses to overwrite an existing branch. Subsequent accepted
+release updates should be ordinary reviewed commits on the release branch, not
+repeated snapshot replacement. Do not push all branches or all refs.
+
+A trial merge of upstream `cf51227e1` found conflicts in model selection,
+timeline scrolling, thread queries/prompt composition, and migration 0119.
+The trial was aborted. This candidate stays on baseline `267938526`; integrating
+those upstream changes requires resolving the contracts and regenerating the
+Drizzle migration snapshot, then running the affected tests. Never resolve the
+migration collision by manually editing snapshot JSON.
