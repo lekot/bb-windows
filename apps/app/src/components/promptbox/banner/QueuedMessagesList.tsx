@@ -19,6 +19,8 @@ import { useSecondTick } from "@/hooks/useSecondTick";
 import { usePluginDisplayName } from "@/lib/plugin-logos";
 import {
   describeQueuedMessageWait,
+  describeRateLimitSchedule,
+  isRateLimitRetry,
   formatQueuedMessageCountdown,
   isQueuedMessageSendNowAllowed,
   queuedMessageCountdownInstant,
@@ -623,7 +625,7 @@ function QueuedMessageFallbackTitle({
   });
   return (
     <span className={queuedMarkdownPreviewClass(compact)} title={title}>
-      {title}
+      {isRateLimitRetry(queuedMessage.payload) ? "Ожидание восстановления лимита" : title}
     </span>
   );
 }
@@ -696,6 +698,21 @@ function QueuedMessageWaitLine({
   });
   if (label === null) return null;
   const failed = queuedMessage.failureReason !== null;
+  if (isRateLimitRetry(queuedMessage.payload) && !failed) {
+    return (
+      <div data-queued-message-wait="" className="mt-1 space-y-1 text-2xs text-warning-text" role="status">
+        <div className="flex items-center gap-1">
+          <Icon name="TimeSchedule" className="size-3 shrink-0" aria-hidden />
+          <span>{describeRateLimitSchedule(now, queuedMessage.sendAt)}</span>
+        </div>
+        <div>Продолжение запланировано автоматически.</div>
+        <details className="text-subtle-foreground">
+          <summary className="cursor-pointer">Подробности</summary>
+          <div>{label}</div>
+        </details>
+      </div>
+    );
+  }
   const icon = queuedMessageWaitIcon(queuedMessage);
   const countdownInstant = queuedMessageCountdownInstant(queuedMessage);
   const countdown =
@@ -1007,7 +1024,9 @@ const QueuedMessageRow = memo(function QueuedMessageRow({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent className="max-md:hidden">
-                    Delete
+                    {isRateLimitRetry(queuedMessage.payload)
+                      ? "Отменить автоповтор"
+                      : "Delete"}
                   </TooltipContent>
                 </Tooltip>
               </div>

@@ -59,6 +59,15 @@ import {
 } from "./command-handlers/path-mutations.js";
 import { resolveInteractiveRequest } from "./command-handlers/interactive.js";
 import { pickHostFolder } from "./command-handlers/native-folder-picker.js";
+import { readNativeClaudeHistory } from "./command-handlers/native-claude-history.js";
+import { readNativeHistory } from "./command-handlers/native-history/read-native-history.js";
+import { readNativeZcodeImage } from "./command-handlers/native-history/zcode.js";
+import { probeNativeHistory } from "./command-handlers/native-history/probe-native-history.js";
+import { readZcodeQuota } from "./command-handlers/native-history/zcode-quota.js";
+import {
+  checkZcodeDesktopRegistration,
+  registerZcodeDesktopTask,
+} from "./command-handlers/native-history/zcode-desktop-registration.js";
 import {
   ProviderInstallationInProgressError,
   streamProviderInstallation,
@@ -636,6 +645,13 @@ const onlineRpcHandlers: OnlineRpcHandlerMap = {
   "host.inspect_git_source": inspectHostGitSource,
   "host.list_branch_options": listHostBranchOptions,
   "host.file_metadata": readHostFileMetadata,
+  "host.read_native_claude_history": readNativeClaudeHistory,
+  "host.read_native_history": readNativeHistory,
+  "host.read_native_image": readNativeZcodeImage,
+  "host.probe_native_history": probeNativeHistory,
+  "host.read_zcode_quota": readZcodeQuota,
+  "host.check_zcode_desktop_registration": checkZcodeDesktopRegistration,
+  "host.register_zcode_desktop_task": registerZcodeDesktopTask,
   "host.read_file": readHostFile,
   "host.read_file_relative": readHostRelativeFile,
   "host.write_file": writeHostFile,

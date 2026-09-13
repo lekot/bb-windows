@@ -175,18 +175,27 @@ function logProcessStep(step) {
   appendFileSync(processLogPath, `${step}:${process.pid}:${process.ppid}\n`);
 }
 
+let exitLogged = false;
 function exitCleanly() {
+  if (exitLogged) {
+    process.exit(0);
+  }
+  exitLogged = true;
   logProcessStep("exit");
   process.exit(0);
 }
 
-process.on("SIGTERM", () => {
+function shutdownFromStdin() {
   if (sigtermDelayMs > 0) {
     setTimeout(exitCleanly, sigtermDelayMs);
     return;
   }
   exitCleanly();
-});
+}
+
+process.on("SIGTERM", shutdownFromStdin);
+process.stdin.on("end", shutdownFromStdin);
+process.stdin.on("close", shutdownFromStdin);
 logProcessStep("spawn");
 let scriptedTurnIndex = 0;
 

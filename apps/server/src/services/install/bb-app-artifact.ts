@@ -16,6 +16,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { HOST_DAEMON_PROTOCOL_VERSION } from "@bb/host-daemon-contract";
+import { resolvePluginNpmCli } from "@bb/plugin-build";
 
 const execFileAsync = promisify(execFile);
 const HOST_DEPENDENCIES = [
@@ -68,10 +69,15 @@ async function defaultCommandRunner(
   args: readonly string[],
   cwd: string,
 ): Promise<string> {
-  const result = await execFileAsync(command, [...args], {
-    cwd,
-    maxBuffer: 10 * 1024 * 1024,
-  });
+  const npmCliPath = command === "npm" ? resolvePluginNpmCli() : null;
+  const result = await execFileAsync(
+    npmCliPath === null ? command : process.execPath,
+    npmCliPath === null ? [...args] : [npmCliPath, ...args],
+    {
+      cwd,
+      maxBuffer: 10 * 1024 * 1024,
+    },
+  );
   return result.stdout;
 }
 

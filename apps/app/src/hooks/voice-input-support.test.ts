@@ -8,31 +8,61 @@ describe("resolveVoiceSupport", () => {
   it("is supported when the browser has both APIs", () => {
     expect(
       resolveVoiceSupport({
+        hasFileCapture: true,
         hasMediaDevices: true,
         hasMediaRecorder: true,
         isSecureContext: true,
       }),
-    ).toEqual({ isSupported: true, reason: null });
+    ).toEqual({
+      captureMode: "media-recorder",
+      isSupported: true,
+      reason: null,
+    });
   });
 
-  it("blames the origin on a plain-HTTP LAN server", () => {
+  it("uses native audio file capture on a plain-HTTP LAN server", () => {
     expect(
       resolveVoiceSupport({
+        hasFileCapture: true,
         hasMediaDevices: false,
         hasMediaRecorder: true,
         isSecureContext: false,
       }),
-    ).toEqual({ isSupported: false, reason: "insecure-origin" });
+    ).toEqual({
+      captureMode: "file-capture",
+      isSupported: true,
+      reason: null,
+    });
   });
 
   it("blames the browser on a secure origin", () => {
     expect(
       resolveVoiceSupport({
+        hasFileCapture: false,
         hasMediaDevices: true,
         hasMediaRecorder: false,
         isSecureContext: true,
       }),
-    ).toEqual({ isSupported: false, reason: "unsupported-browser" });
+    ).toEqual({
+      captureMode: null,
+      isSupported: false,
+      reason: "unsupported-browser",
+    });
+  });
+
+  it("blames the origin when neither capture path is available", () => {
+    expect(
+      resolveVoiceSupport({
+        hasFileCapture: false,
+        hasMediaDevices: false,
+        hasMediaRecorder: true,
+        isSecureContext: false,
+      }),
+    ).toEqual({
+      captureMode: null,
+      isSupported: false,
+      reason: "insecure-origin",
+    });
   });
 });
 

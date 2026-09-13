@@ -17,11 +17,13 @@ import type {
   SystemEnvironmentProvider,
 } from "@bb/server-contract";
 import { EMPTY_ORDERED_MENTION_SUGGESTIONS } from "@bb/client-core";
+import type { ThreadResponse } from "@bb/server-contract";
 import {
   makeEnvironment as makeEnvironmentFixture,
   makeHost as makeHostFixture,
   makeProviderInfo,
   makeThread as makeThreadFixture,
+  makeThreadWithRuntime as makeThreadWithRuntimeFixture,
   makeThreadListEntry as makeThreadListEntryFixture,
 } from "@bb/test-helpers/domain-fixtures";
 import { makeProjectResponse } from "../src/test/fixtures/projects";
@@ -523,6 +525,25 @@ export function makeThread(overrides: Partial<Thread> = {}): Thread {
     titleFallback: "Audit recurring permission failures",
     ...overrides,
   });
+}
+
+export function makeThreadDetail(
+  overrides: Partial<ThreadResponse> = {},
+): ThreadResponse {
+  return {
+    ...makeThreadWithRuntimeFixture({
+      id: "thr_demo",
+      projectId: PROJECT_IDS.bb,
+      environmentId: "env_demo",
+      title: "Audit recurring permission failures",
+      titleFallback: "Audit recurring permission failures",
+    }),
+    activeBackgroundAgentCount: 0,
+    canSpawnChild: true,
+    queuedMessageCount: 0,
+    providerSessionId: null,
+    ...overrides,
+  };
 }
 
 export function makeThreadListEntry(

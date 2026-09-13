@@ -22,6 +22,7 @@
  *                            → make `--list-models` fail with this stderr
  * - FAKE_ACP_MODEL_CONFIG=1  → advertise a model configOptions select
  * - FAKE_ACP_MODELS_FIELD=1  → advertise legacy ACP models state
+ * - FAKE_ACP_SESSION_MODES=1 → advertise plan/build/edit/yolo session modes
  * - FAKE_ACP_THOUGHT_LEVEL_CONFIG=1
  *                            → advertise per-model effort configOptions
  * - FAKE_ACP_INITIAL_FAST    → set the initial Fast mode value
@@ -78,6 +79,7 @@ const usageOnLoad = process.env.FAKE_ACP_USAGE_ON_LOAD === "1";
 const usageSessionId = process.env.FAKE_ACP_USAGE_SESSION_ID;
 const modelConfig = process.env.FAKE_ACP_MODEL_CONFIG === "1";
 const modelsField = process.env.FAKE_ACP_MODELS_FIELD === "1";
+const sessionModes = process.env.FAKE_ACP_SESSION_MODES === "1";
 const thoughtLevelConfig = process.env.FAKE_ACP_THOUGHT_LEVEL_CONFIG === "1";
 const unmappedReasoningConfig =
   process.env.FAKE_ACP_UNMAPPED_REASONING_CONFIG === "1";
@@ -123,6 +125,7 @@ const fakeModels = [
 let activePromptId = null;
 let nextAgentRequestId = 1000;
 let selectedModel = "fake/default";
+let selectedMode = "build";
 let selectedEffort = "none";
 let selectedFast = process.env.FAKE_ACP_INITIAL_FAST ?? "false";
 let clientSupportsParameterizedModels = false;
@@ -142,7 +145,10 @@ for (let i = fakeModels.length; i < modelCount; i += 1) {
   effortsByModel.set(value, ["low", "medium", "high"]);
 }
 
-process.on("SIGTERM", () => {
+let reaped = false;
+function reap() {
+  if (reaped) return;
+  reaped = true;
   if (process.env.FAKE_ACP_SIGNAL_FILE) {
     const signalFile = process.env.FAKE_ACP_SIGNAL_FILE;
     const stagedSignalFile = `${signalFile}.${process.pid}.tmp`;
@@ -152,10 +158,13 @@ process.on("SIGTERM", () => {
     renameSync(stagedSignalFile, signalFile);
   }
   process.exit(0);
-});
+}
+process.on("SIGTERM", reap);
+process.stdin.on("end", reap);
+process.stdin.on("close", reap);
 
 if (process.env.FAKE_ACP_READY_FILE) {
-  writeFileSync(process.env.FAKE_ACP_READY_FILE, "ready\n");
+  writeFileSync(process.env.FAKE_ACP_READY_FILE, `ready ${process.pid}\n`);
 }
 
 if (process.env.FAKE_ACP_LAUNCH_LOG) {
@@ -330,6 +339,15 @@ function configState() {
       })),
     };
   }
+  if (sessionModes) {
+    state.modes = {
+      currentModeId: selectedMode,
+      availableModes: ["plan", "build", "edit", "yolo"].map((id) => ({
+        id,
+        name: id[0].toUpperCase() + id.slice(1),
+      })),
+    };
+  }
   return state;
 }
 
@@ -427,7 +445,11 @@ async function handlePrompt(message) {
     send({
       jsonrpc: "2.0",
       id: message.id,
-      error: { code: -32000, message: "Fake prompt failure" },
+      error: {
+        code: -32000,
+        message:
+          process.env.FAKE_ACP_PROMPT_ERROR_MESSAGE ?? "Fake prompt failure",
+      },
     });
     return;
   }
@@ -480,6 +502,22 @@ async function handlePrompt(message) {
       outcome = "error";
     }
     notifyUpdate(messageChunk(`permission:${outcome}`));
+  } else if (text.includes("orphan-permission")) {
+    void requestClient("session/request_permission", {
+      sessionId: activeSessionId,
+      toolCall: {
+        toolCallId: "orphan",
+        title: "Bash",
+        kind: "execute",
+        rawInput: { command: "git status" },
+      },
+      options: [{ optionId: "yes", name: "Allow once", kind: "allow_once" }],
+    }).then((result) => {
+      process.env.FAKE_ACP_ORPHAN_OUTCOME = result.outcome.outcome;
+    });
+    await sleep(30);
+  } else if (text.includes("check-orphan")) {
+    notifyUpdate(messageChunk(`orphan:${process.env.FAKE_ACP_ORPHAN_OUTCOME}`));
   } else if (text.includes("request-permission")) {
     notifyUpdate({
       sessionUpdate: "tool_call",
@@ -533,10 +571,15 @@ async function handlePrompt(message) {
     notifyUpdate(messageChunk(`echo:${text}`));
     await sleep(300);
   } else if (text.includes("echo-argv")) {
-    // Lets bridge tests assert the launch args (e.g. the --model pin).
-    notifyUpdate(messageChunk(`argv:${process.argv.slice(2).join(" ")}`));
+    const launchArgs = [...process.execArgv, ...process.argv.slice(2)].join(
+      " ",
+    );
+    notifyUpdate(messageChunk(`argv:${launchArgs}`));
   } else if (text.includes("echo-selected-model")) {
     notifyUpdate(messageChunk(`selected-model:${selectedModel}`));
+    if (text.includes("echo-selected-effort")) {
+      notifyUpdate(messageChunk(`selected-effort:${selectedEffort}`));
+    }
   } else if (text.includes("echo-selected-effort")) {
     notifyUpdate(messageChunk(`selected-effort:${selectedEffort}`));
   } else if (text.includes("echo-selected-fast")) {
@@ -732,6 +775,24 @@ async function handleMessage(message) {
         return;
       }
       selectedModel = modelId;
+      send({ jsonrpc: "2.0", id: message.id, result: configState() });
+      return;
+    }
+    case "session/set_mode": {
+      const modeId = message.params?.modeId;
+      if (
+        !sessionModes ||
+        typeof modeId !== "string" ||
+        !["plan", "build", "edit", "yolo"].includes(modeId)
+      ) {
+        send({
+          jsonrpc: "2.0",
+          id: message.id,
+          error: { code: -32602, message: `mode not found: ${modeId}` },
+        });
+        return;
+      }
+      selectedMode = modeId;
       send({ jsonrpc: "2.0", id: message.id, result: configState() });
       return;
     }

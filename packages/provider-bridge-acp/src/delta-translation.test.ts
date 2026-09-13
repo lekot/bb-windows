@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { threadScope, turnScope, type ThreadEvent } from "@bb/domain";
 import type { ProviderRuntimeEvent } from "@bb/provider-bridge-protocol/bridge-kit";
@@ -854,6 +855,50 @@ describe("acp delta translation (moved from the legacy adapter suite)", () => {
     expect(change?.diff).toContain("+new line");
     expect(change?.diff).not.toContain("-same");
     expect(change?.diff).not.toContain("+same");
+    expect(countChangedLines(change?.diff)).toEqual({ added: 1, removed: 1 });
+  });
+
+  it("attaches a ZCode Windows result diff to its original Edit card", () => {
+    const harness = startedHarness();
+    const path = "C:\\Source\\bb-windows\\thread-execution-plan.ts";
+    const started = harness.translate(updateEvent({
+      sessionUpdate: "tool_call",
+      toolCallId: "call-zcode-edit",
+      title: "Edit",
+      kind: "edit",
+      rawInput: { file_path: path, old_string: "before", new_string: "after" },
+    }));
+    const startedId = started.find((event) => event.type === "item/started");
+    expect(startedId?.type === "item/started" && startedId.item.type).toBe("fileChange");
+    harness.translate(updateEvent({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call-zcode-edit",
+      status: "in_progress",
+    }));
+    const completed = harness.translate(updateEvent({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call-zcode-edit",
+      status: "completed",
+      content: [{ type: "diff", path, oldText: "same\r\nbefore\r\n", newText: "same\r\nafter\r\n" }],
+    }));
+    expect(completed).toHaveLength(1);
+    expect(completed[0]).toMatchObject({
+      type: "item/completed",
+      item: {
+        id: startedId?.type === "item/started" ? startedId.item.id : "missing",
+        type: "fileChange",
+        status: "completed",
+        changes: [{ kind: "update" }],
+      },
+    });
+    const event = completed[0];
+    if (event?.type !== "item/completed" || event.item.type !== "fileChange") {
+      throw new Error("Expected the completed Edit card");
+    }
+    const change = event.item.changes[0];
+    expect(change?.path.replaceAll("\\", "/")).toBe(path.replaceAll("\\", "/"));
+    expect(change?.diff).toContain("-before");
+    expect(change?.diff).toContain("+after");
     expect(countChangedLines(change?.diff)).toEqual({ added: 1, removed: 1 });
   });
 
@@ -1964,7 +2009,8 @@ describe("acp delta translation (raw payloads and real results)", () => {
   });
 
   it("resolves a relative location and grok's target_file against the session cwd", () => {
-    const translator = createAcpDeltaTranslator({ cwd: "/workspace/app" });
+    const cwd = path.resolve("/workspace/app");
+    const translator = createAcpDeltaTranslator({ cwd });
     const assembler = createDeltaAssembler({
       providerId: "acp",
       entropyPrefix: ENTROPY,
@@ -1989,7 +2035,7 @@ describe("acp delta translation (raw payloads and real results)", () => {
         }),
       )[0],
     ).toMatchObject({
-      item: { type: "fileRead", path: "/workspace/app/README.md" },
+      item: { type: "fileRead", path: path.join(cwd, "README.md") },
     });
 
     expect(
@@ -2004,7 +2050,7 @@ describe("acp delta translation (raw payloads and real results)", () => {
         }),
       )[0],
     ).toMatchObject({
-      item: { type: "fileRead", path: "/workspace/app/src/index.ts" },
+      item: { type: "fileRead", path: path.join(cwd, "src", "index.ts") },
     });
   });
 

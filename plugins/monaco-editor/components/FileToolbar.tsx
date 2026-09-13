@@ -11,6 +11,8 @@ export interface FileToolbarProps {
   onRefresh: () => void;
   isFilesOpen: boolean;
   onToggleFiles: () => void;
+  mdView?: "preview" | "source";
+  onMdViewChange?: (view: "preview" | "source") => void;
 }
 
 export function FileToolbar({
@@ -20,6 +22,8 @@ export function FileToolbar({
   onRefresh,
   isFilesOpen,
   onToggleFiles,
+  mdView,
+  onMdViewChange,
 }: FileToolbarProps) {
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 bg-surface-raised px-4">
@@ -37,6 +41,26 @@ export function FileToolbar({
           <RotateIcon className={cn(isRefreshing && "animate-spin")} />
         </ToolbarButton>
       </div>
+      {mdView !== undefined && onMdViewChange !== undefined ? (
+        <div className="flex items-center rounded-md bg-muted p-0.5">
+          {(["preview", "source"] as const).map((view) => (
+            <button
+              key={view}
+              type="button"
+              aria-pressed={mdView === view}
+              className={cn(
+                "rounded-sm px-2 py-0.5 text-xs capitalize",
+                mdView === view
+                  ? "bg-background text-foreground shadow-2xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => onMdViewChange(view)}
+            >
+              {view}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <SaveDot indicator={indicator} />
       <ToolbarButton
         label={isFilesOpen ? "Hide files" : "Show in files"}

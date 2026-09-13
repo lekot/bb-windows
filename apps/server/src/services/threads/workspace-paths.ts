@@ -4,8 +4,16 @@ export function isBbManagedWorkspacePath(args: {
   dataDir: string;
   path: string;
 }): boolean {
+  const normalize = (value: string) => value.replaceAll("\\", "/");
   return [
-    path.posix.join(args.dataDir, "worktrees"),
-    path.posix.join(args.dataDir, "personal-workspaces"),
-  ].some((root) => args.path === root || args.path.startsWith(`${root}/`));
+    path.join(args.dataDir, "worktrees"),
+    path.join(args.dataDir, "personal-workspaces"),
+  ].some((root) => {
+    const normalizedPath = normalize(args.path);
+    const normalizedRoot = normalize(root);
+    return (
+      normalizedPath === normalizedRoot ||
+      normalizedPath.startsWith(`${normalizedRoot}/`)
+    );
+  });
 }

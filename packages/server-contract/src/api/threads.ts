@@ -95,10 +95,18 @@ export const startedOnBehalfOfSchema = z.object({
 });
 export type StartedOnBehalfOf = z.infer<typeof startedOnBehalfOfSchema>;
 
+const NATIVE_SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$/;
+
 export const createThreadRequestSchema = z
   .object({
     projectId: z.string().min(1),
     providerId: z.string().min(1).optional(),
+    claudeSourceSessionId: z.string().uuid().optional(),
+    claudeResumeSessionId: z.string().uuid().optional(),
+    nativeResumeSessionId: z
+      .string()
+      .regex(NATIVE_SESSION_ID_PATTERN)
+      .optional(),
     origin: threadCreateOriginSchema,
     originPluginId: z.string().min(1).optional(),
     pluginMetadata: pluginMetadataSchema.optional(),
@@ -127,6 +135,49 @@ export const createThreadRequestSchema = z
     sendAt: z.number().int().nonnegative().optional(),
   })
   .superRefine((value, ctx) => {
+    if (
+      value.claudeResumeSessionId !== undefined &&
+      (value.providerId !== "claude-code" ||
+        value.claudeSourceSessionId !== undefined ||
+        value.originKind !== null ||
+        value.sourceThreadId !== undefined ||
+        value.sourceSeqEnd !== undefined ||
+        value.nativeResumeSessionId !== undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "claudeResumeSessionId requires claude-code and cannot combine with copying or forking",
+        path: ["claudeResumeSessionId"],
+      });
+    }
+    if (
+      value.nativeResumeSessionId !== undefined &&
+      (value.claudeSourceSessionId !== undefined ||
+        value.claudeResumeSessionId !== undefined ||
+        value.originKind !== null ||
+        value.sourceThreadId !== undefined ||
+        value.sourceSeqEnd !== undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "nativeResumeSessionId cannot combine with copying or forking",
+        path: ["nativeResumeSessionId"],
+      });
+    }
+    if (
+      value.claudeSourceSessionId !== undefined &&
+      (value.providerId !== "claude-code" ||
+        value.originKind !== null ||
+        value.sourceThreadId !== undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "claudeSourceSessionId requires claude-code and no bb fork source",
+        path: ["claudeSourceSessionId"],
+      });
+    }
     if (value.origin === "plugin" && value.originPluginId === undefined) {
       ctx.addIssue({
         code: "custom",
@@ -484,6 +535,7 @@ export type ThreadSearchResponse = z.infer<typeof threadSearchResponseSchema>;
 export const threadResponseSchema = threadWithRuntimeSchema.extend({
   activeBackgroundAgentCount: z.number().int().nonnegative(),
   canSpawnChild: z.boolean(),
+  providerSessionId: z.string().nullable(),
   // How many messages are waiting on this thread's queue right now — waiting on
   // the clock, on the running turn, on provisioning, on an interaction, or on
   // a plugin. The count alone drives the pending-region and thread-row badges;
@@ -620,6 +672,7 @@ export const updateThreadRequestSchema = z
     model: z.string().min(1).nullable(),
     reasoningLevel: reasoningLevelSchema.nullable(),
     visibility: threadVisibilitySchema,
+    adoptNativeSessionId: z.string().regex(NATIVE_SESSION_ID_PATTERN),
   })
   .partial()
   .refine(
@@ -629,8 +682,15 @@ export const updateThreadRequestSchema = z
       value.parentThreadId !== undefined ||
       value.model !== undefined ||
       value.reasoningLevel !== undefined ||
-      value.visibility !== undefined,
+      value.visibility !== undefined ||
+      value.adoptNativeSessionId !== undefined,
     "At least one field must be provided",
+  )
+  .refine(
+    (value) =>
+      value.adoptNativeSessionId === undefined ||
+      (value.model === undefined && value.reasoningLevel === undefined),
+    "adoptNativeSessionId records the settings the thread already runs, so it cannot be combined with a model or reasoning change",
   );
 export type UpdateThreadRequest = z.infer<typeof updateThreadRequestSchema>;
 
@@ -1061,6 +1121,189 @@ export const threadConversationOutlineResponseSchema = z
   .strict();
 export type ThreadConversationOutlineResponse = z.infer<
   typeof threadConversationOutlineResponseSchema
+>;
+
+export const threadNativeHistoryMessageSchema = z
+  .object({
+    id: z.string().min(1),
+    role: z.enum(["user", "assistant"]),
+    text: z.string(),
+    timestamp: z.string().nullable(),
+    images: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1).max(256),
+            mimeType: z.enum([
+              "image/png",
+              "image/jpeg",
+              "image/webp",
+              "image/gif",
+            ]),
+          })
+          .strict(),
+      )
+      .max(16)
+      .optional(),
+  })
+  .strict();
+
+export const threadNativeImageQuerySchema = z
+  .object({
+    messageId: z.string().min(1).max(256),
+    attachmentId: z.string().min(1).max(256),
+  })
+  .strict();
+export type ThreadNativeImageQuery = z.infer<
+  typeof threadNativeImageQuerySchema
+>;
+export interface ThreadNativeImageResponse {
+  mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+  base64: string;
+}
+
+export const threadNativeHistoryResponseSchema = z
+  .object({
+    supported: z.boolean(),
+    revision: z.string().nullable(),
+    contextUsage: z
+      .object({
+        usedTokens: z.number().int().nonnegative(),
+        observedAt: z.string().nullable(),
+        model: z.string().nullable(),
+        contextWindow: z.number().int().positive().nullable(),
+      })
+      .strict()
+      .nullable(),
+    messages: z.array(threadNativeHistoryMessageSchema),
+    nextCursor: z.string().min(1).nullable(),
+    metadata: z
+      .object({
+        title: z.string().nullable(),
+        model: z.string().nullable(),
+        permissionMode: z.string().nullable(),
+        sessionOrigin: z.enum(["bb", "native"]).optional(),
+      })
+      .strict(),
+    truncated: z.boolean(),
+  })
+  .strict();
+export type ThreadNativeHistoryResponse = z.infer<
+  typeof threadNativeHistoryResponseSchema
+>;
+
+export const threadNativeHistoryQuerySchema = z
+  .object({
+    before: z.string().min(1).optional(),
+    limit: z.string().regex(/^\d+$/).optional(),
+  })
+  .strict();
+export type ThreadNativeHistoryQuery = z.infer<
+  typeof threadNativeHistoryQuerySchema
+>;
+
+const nativeQuotaWindowSchema = z
+  .object({
+    usedPercentage: z.number().min(0).max(100),
+    remainingPercentage: z.number().min(0).max(100),
+    nextResetTime: z.string().nullable(),
+  })
+  .strict();
+
+const nativeQuotaToolCallsSchema = z
+  .object({
+    used: z.number().nonnegative().nullable(),
+    total: z.number().nonnegative().nullable(),
+    remaining: z.number().nonnegative().nullable(),
+    percentage: z.number().min(0).max(100).nullable(),
+    nextResetTime: z.string().nullable(),
+  })
+  .strict();
+
+export const threadNativeQuotaResponseSchema = z
+  .object({
+    supported: z.boolean(),
+    status: z.enum(["ok", "missing", "unavailable"]),
+    fiveHour: nativeQuotaWindowSchema.nullable(),
+    toolCalls: nativeQuotaToolCallsSchema.nullable(),
+    fetchedAt: z.string().nullable(),
+    reason: z.string().nullable(),
+  })
+  .strict();
+export type ThreadNativeQuotaResponse = z.infer<
+  typeof threadNativeQuotaResponseSchema
+>;
+
+export const threadDesktopSyncResponseSchema = z
+  .object({
+    supported: z.boolean(),
+    nativeSessionId: z.string().nullable(),
+    nativeHistoryStatus: z.enum(["ok", "missing", "unavailable"]),
+    lastNativeMessageAt: z.string().nullable(),
+    desktopStatus: z.enum(["registered", "not_registered", "unavailable"]),
+    desktopTitle: z.string().nullable(),
+    desktopWorkspacePath: z.string().nullable(),
+    reason: z.string().nullable(),
+  })
+  .strict();
+export type ThreadDesktopSyncResponse = z.infer<
+  typeof threadDesktopSyncResponseSchema
+>;
+
+export const threadDesktopRegisterRequestSchema = z
+  .object({
+    apply: z.boolean(),
+  })
+  .strict();
+export type ThreadDesktopRegisterRequest = z.infer<
+  typeof threadDesktopRegisterRequestSchema
+>;
+export const threadDesktopRegisterResponseSchema = z
+  .object({
+    supported: z.boolean(),
+    nativeSessionId: z.string().nullable(),
+    outcome: z.discriminatedUnion("status", [
+      z
+        .object({
+          status: z.literal("already_registered"),
+          title: z.string().nullable(),
+          workspacePath: z.string().nullable(),
+          provider: z.string().nullable(),
+        })
+        .strict(),
+      z
+        .object({
+          status: z.literal("preflight_ok"),
+          title: z.string(),
+          workspacePath: z.string(),
+          provider: z.literal("glm"),
+          mode: z.string().min(1),
+          model: z.string().nullable(),
+          createdAt: z.number().int().nonnegative(),
+          updatedAt: z.number().int().nonnegative(),
+        })
+        .strict(),
+      z
+        .object({
+          status: z.literal("registered"),
+          title: z.string(),
+          workspacePath: z.string(),
+          provider: z.literal("glm"),
+          backupPath: z.string(),
+        })
+        .strict(),
+      z
+        .object({ status: z.literal("rejected"), reason: z.string().min(1) })
+        .strict(),
+      z
+        .object({ status: z.literal("unavailable"), reason: z.string().min(1) })
+        .strict(),
+    ]),
+    reason: z.string().nullable(),
+  })
+  .strict();
+export type ThreadDesktopRegisterResponse = z.infer<
+  typeof threadDesktopRegisterResponseSchema
 >;
 
 export const threadStorageFileListResponseSchema =

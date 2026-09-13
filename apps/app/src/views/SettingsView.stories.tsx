@@ -322,6 +322,9 @@ function AppearanceSettingsStory() {
       onFaviconColorChange={(faviconColor) =>
         state.setAppearance((current) => ({ ...current, faviconColor }))
       }
+      onTypographyChange={(next) =>
+        state.setAppearance((current) => ({ ...current, ...next }))
+      }
       onThemePreferenceChange={state.setThemePreference}
       themePreference={state.themePreference}
     />

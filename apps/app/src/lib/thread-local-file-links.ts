@@ -96,8 +96,7 @@ function normalizeLocalFilePathWithinRoot(
     !isAbsoluteFilePathWithinRoot({
       candidatePath: normalizedPath,
       rootPath: normalizedRootPath,
-    }) ||
-    normalizedPath === normalizedRootPath
+    })
   ) {
     return null;
   }
@@ -105,7 +104,12 @@ function normalizeLocalFilePathWithinRoot(
   const relativePath =
     normalizedRootPath === "/"
       ? normalizedPath.slice(1)
+      : /^[A-Za-z]:\/$/u.test(normalizedRootPath)
+        ? normalizedPath.slice(normalizedRootPath.length)
       : normalizedPath.slice(normalizedRootPath.length + 1);
+  if (relativePath.length === 0) {
+    return null;
+  }
 
   return {
     path: normalizedPath,

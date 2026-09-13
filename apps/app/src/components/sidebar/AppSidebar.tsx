@@ -17,16 +17,21 @@ import { useThreadListReplacement } from "./threadListProvider";
 import {
   PluginSidebarFooterDisclosure,
   PluginSidebarFooterItems,
+  PluginSidebarFooterNavPanels,
   usePluginSidebarFooterDisclosure,
 } from "@/components/plugin/PluginSidebarFooterItems";
 import { SidebarPluginAttentionGlyph } from "./SidebarPluginAttentionGlyph";
+import { SidebarUsageLimitsBadge } from "./SidebarUsageLimitsBadge";
 import { SidebarUpdatesBadge } from "./SidebarUpdatesBadge";
 import { SidebarResizeHandle, SidebarTopReserveRow } from "./SidebarChrome";
 import { SIDEBAR_FOOTER_ACTION_CLASS } from "./sidebarRowClasses";
 import { useQuickCreateProjectController } from "@/hooks/useQuickCreateProject";
-import { getRootComposeRoutePath, getThreadRoutePath } from "@/lib/route-paths";
+import {
+  getRootComposeRoutePath,
+  getSettingsRoutePath,
+  getThreadRoutePath,
+} from "@/lib/route-paths";
 import { usePaneContentSplitDrag } from "./usePaneContentSplitDrag";
-import { openUrlInExternalBrowser } from "@/lib/url-open-routing";
 import {
   EMPTY_SIDEBAR_THREAD_SHORTCUT_KEYS,
   getSidebarThreadNavigationTargets,
@@ -43,6 +48,7 @@ import {
   useIndexedAppCommandHandlers,
 } from "@/components/commands/AppCommandProvider";
 import { useRouteState } from "@/hooks/useRouteState";
+import { openUrlInExternalBrowser } from "@/lib/url-open-routing";
 import { SidebarNavigationRegion } from "./SidebarNavigationRegion";
 
 const NEW_THREAD_PANE_CONTENT = { kind: "new-thread" } as const;
@@ -240,6 +246,7 @@ export function AppSidebar({
           item={pluginSidebarFooter.activeItem}
           onDismiss={pluginSidebarFooter.dismiss}
         />
+        <SidebarUsageLimitsBadge />
         <SidebarMenu className="flex-row flex-wrap-reverse items-center gap-1">
           <PluginSidebarFooterItems
             activeDisclosureKey={pluginSidebarFooter.activeKey}
@@ -259,6 +266,13 @@ export function AppSidebar({
                 },
               },
               {
+                id: "typography",
+                onActivate: () => {
+                  closeOnMobile();
+                  void navigate(getSettingsRoutePath("appearance"));
+                },
+              },
+              {
                 id: "report-bug",
                 onActivate: () => {
                   closeOnMobile();
@@ -273,6 +287,7 @@ export function AppSidebar({
             onNavigate={closeOnMobile}
           />
           <SidebarUpdatesBadge onNavigate={closeOnMobile} />
+          <PluginSidebarFooterNavPanels onNavigate={closeOnMobile} />
         </SidebarMenu>
       </SidebarFooter>
       <SidebarResizeHandle

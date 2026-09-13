@@ -447,7 +447,7 @@ describe("FilePreview", () => {
     );
     expect(
       screen.getByText(
-        `Showing the first ${SOURCE_CODE_MAX_LINES.toLocaleString()} of ${totalLineCount.toLocaleString()} lines.`,
+        `Showing the first ${SOURCE_CODE_MAX_LINES.toLocaleString("en-US")} of ${totalLineCount.toLocaleString("en-US")} lines.`,
       ),
     ).toBeTruthy();
 

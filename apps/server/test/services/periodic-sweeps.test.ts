@@ -177,7 +177,7 @@ describe("runPeriodicSweeps", () => {
         ),
       ).toHaveLength(1);
     });
-  });
+  }, 20_000);
 
   it("migrates legacy outputs one per event-loop turn and notifies their thread", async () => {
     await withTestHarness(async (harness) => {

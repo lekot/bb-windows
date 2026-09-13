@@ -205,6 +205,28 @@ describe("pending interactions", () => {
     ).toBe("pending");
   });
 
+  it("does not interrupt another turn when an older turn finishes", () => {
+    const { db, thread } = setup();
+    for (const turnId of ["old-turn", "new-turn"]) {
+      createPendingInteraction(db, {
+        threadId: thread.id,
+        turnId,
+        providerId: "codex",
+        providerThreadId: "provider-thread",
+        providerRequestId: turnId,
+        payload: commandApprovalPayload("git status", turnId),
+      });
+    }
+    const interrupted = interruptPendingInteractionsForThreads(db, {
+      providerId: "codex",
+      threadIds: [thread.id],
+      turnId: "old-turn",
+      statusReason: "Turn ended",
+    });
+    expect(interrupted.map((row) => row.turnId)).toEqual(["old-turn"]);
+    expect(getActivePendingInteractionForThread(db, thread.id)?.turnId).toBe("new-turn");
+  });
+
   it(
     "chunks provider-thread interrupts to stay under SQLite variable limits",
     () => {

@@ -509,8 +509,8 @@ function SourceCodeTruncationNotice({
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-3 text-xs text-muted-foreground">
       <span>
-        Showing the first {truncation.renderedLineCount.toLocaleString()} of{" "}
-        {truncation.totalLineCount.toLocaleString()} lines.
+        Showing the first {truncation.renderedLineCount.toLocaleString("en-US")}{" "}
+        of {truncation.totalLineCount.toLocaleString("en-US")} lines.
       </span>
       <Button
         type="button"

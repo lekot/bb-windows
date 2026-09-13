@@ -238,6 +238,9 @@ and the `bb tasks` command. Common agent operations are:
   bb tasks detach <key-or-id> [--thread <thread-id>] [--json]
   bb tasks update <key-or-id> --status in_review [--json]
   bb tasks update <key-or-id> (--parent <parent-key-or-id> | --no-parent) [--json]
+  bb tasks import-obsidian [--path <catalog-dir>] [--prefix <key>=<prefix>]... [--apply] [--json]
+  bb tasks files sources <prefix-or-id> [--json]
+  bb tasks files list <prefix-or-id> [--source <id>] [--path <relative>] [--json]
 
 Run `bb tasks --help` for project, folder, task, label, attachment, and demo-data
 commands, plus preset management, delegation, and attached-thread inspection.

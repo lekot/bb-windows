@@ -602,6 +602,10 @@ export interface MarkThreadDeletedArgs {
   threadId: string;
 }
 
+export interface MarkThreadAttentionRequestedArgs {
+  threadId: string;
+}
+
 export interface ListThreadEnvironmentAssignmentsOnHostArgs {
   hostId: string;
   threadIds: readonly string[];
@@ -1822,6 +1826,74 @@ export function getThreadStartupContext(
       .where(eq(threads.id, threadId))
       .get()?.startupContext ?? null
   );
+}
+
+export interface SetThreadNativeResumeInput {
+  threadId: string;
+  nativeResume: string;
+}
+
+export function setThreadNativeResume(
+  db: ThreadWriteConnection,
+  input: SetThreadNativeResumeInput,
+) {
+  return (
+    db
+      .update(threads)
+      .set({ nativeResume: input.nativeResume, updatedAt: Date.now() })
+      .where(eq(threads.id, input.threadId))
+      .returning()
+      .get() ?? null
+  );
+}
+
+export function getThreadNativeResume(
+  db: DbQueryConnection,
+  threadId: string,
+): string | null {
+  return (
+    db
+      .select({ nativeResume: threads.nativeResume })
+      .from(threads)
+      .where(eq(threads.id, threadId))
+      .get()?.nativeResume ?? null
+  );
+}
+
+export function markThreadAttentionRequested(
+  db: ThreadWriteConnection,
+  notifier: DbNotifier,
+  args: MarkThreadAttentionRequestedArgs,
+) {
+  const existing = db
+    .select()
+    .from(threads)
+    .where(eq(threads.id, args.threadId))
+    .get();
+  if (!existing) {
+    return null;
+  }
+
+  const now = Date.now();
+  if (now <= existing.latestAttentionAt) {
+    return existing;
+  }
+
+  const updated = db
+    .update(threads)
+    .set({
+      latestAttentionAt: now,
+      updatedAt: now,
+    })
+    .where(eq(threads.id, args.threadId))
+    .returning()
+    .get();
+  if (updated) {
+    notifier.notifyThread(args.threadId, ["read-state-changed"], {
+      projectId: existing.projectId,
+    });
+  }
+  return updated ?? null;
 }
 
 export function deleteThread(

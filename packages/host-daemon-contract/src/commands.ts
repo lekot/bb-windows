@@ -13,6 +13,8 @@ import {
   permissionModeSchema,
   promptInputSchema,
   providerForkSchema,
+  reasoningLevelSchema,
+  serviceTierSchema,
   threadGitDiffResponseSchema,
   runtimeThreadExecutionOptionsSchema,
   rawDiffFileStatSchema,
@@ -30,6 +32,7 @@ import {
   FILE_LIST_EXCLUDE_NAMES_MAX,
   FILE_LIST_LIMIT_MAX,
   FILE_LIST_QUERY_MAX_LENGTH,
+  nativeHistoryReaderKindSchema,
   flattenPromptInputGroups,
 } from "@bb/domain";
 import { z } from "zod";
@@ -220,9 +223,29 @@ const hostDaemonThreadRuntimeContextSchema = z
   })
   .strict();
 
+const nativeSessionBaselineExecutionSchema = z
+  .object({
+    model: z.string().min(1),
+    permissionMode: permissionModeSchema,
+    reasoningLevel: reasoningLevelSchema,
+    serviceTier: serviceTierSchema,
+  })
+  .strict();
+
+export const nativeSessionResumeIntentSchema = z
+  .object({
+    resumeOriginal: z.literal(true),
+    baselineExecution: nativeSessionBaselineExecutionSchema,
+  })
+  .strict();
+export type NativeSessionResumeIntent = z.infer<
+  typeof nativeSessionResumeIntentSchema
+>;
+
 const hostDaemonExistingThreadRuntimeContextSchema =
   hostDaemonThreadRuntimeContextSchema.extend({
     providerThreadId: z.string().min(1),
+    nativeSession: nativeSessionResumeIntentSchema.nullable(),
   });
 
 const turnResumeContextSchema =
@@ -282,6 +305,7 @@ const threadStartCommandSchema = hostDaemonThreadTargetSchema
     threadStoragePath: z.string().min(1).optional(),
     fork: z
       .object({
+        resumeOriginal: z.literal(true).optional(),
         sourceProviderThreadId: z.string().min(1),
         sourceProviderCheckpointId: z.string().min(1).optional(),
       })
@@ -458,6 +482,88 @@ const hostFileMetadataCommandSchema = z
     type: z.literal("host.file_metadata"),
     path: z.string().min(1),
     rootPath: z.string().min(1).optional(),
+  })
+  .strict();
+
+const hostReadNativeClaudeHistoryCommandSchema = z
+  .object({
+    type: z.literal("host.read_native_claude_history"),
+    before: z.string().min(1).nullable(),
+    cwd: z.string().min(1),
+    limit: z.number().int().positive().max(100),
+    sessionId: z.string().uuid(),
+  })
+  .strict();
+
+import type { NativeHistoryReaderKind } from "@bb/domain";
+
+export const nativeHistoryReaderSchema = nativeHistoryReaderKindSchema;
+export type NativeHistoryReader = NativeHistoryReaderKind;
+
+const nativeHistorySessionIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$/;
+
+const hostReadNativeHistoryCommandSchema = z
+  .object({
+    type: z.literal("host.read_native_history"),
+    before: z.string().min(1).nullable(),
+    cwd: z.string().min(1),
+    limit: z.number().int().positive().max(100),
+    reader: nativeHistoryReaderSchema,
+    sessionId: z.string().regex(nativeHistorySessionIdPattern),
+  })
+  .strict();
+
+const hostReadNativeImageCommandSchema = z.object({
+  type: z.literal("host.read_native_image"),
+  cwd: z.string().min(1),
+  sessionId: z.string().regex(nativeHistorySessionIdPattern),
+  messageId: z.string().min(1).max(256),
+  attachmentId: z.string().min(1).max(256),
+}).strict();
+
+const nativeImageResultSchema = z.object({
+  mimeType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif"]),
+  base64: z.string().min(1).max(11184812),
+}).strict();
+
+const hostProbeNativeHistoryItemSchema = z
+  .object({
+    cwd: z.string().min(1),
+    reader: nativeHistoryReaderSchema.exclude(["claude-transcript"]),
+    sessionId: z.string().regex(nativeHistorySessionIdPattern),
+  })
+  .strict();
+export type HostProbeNativeHistoryItem = z.infer<
+  typeof hostProbeNativeHistoryItemSchema
+>;
+
+const hostProbeNativeHistoryCommandSchema = z
+  .object({
+    items: z.array(hostProbeNativeHistoryItemSchema).min(1).max(25),
+    type: z.literal("host.probe_native_history"),
+  })
+  .strict();
+
+const hostReadZcodeQuotaCommandSchema = z
+  .object({
+    type: z.literal("host.read_zcode_quota"),
+  })
+  .strict();
+
+const hostCheckZcodeDesktopRegistrationCommandSchema = z
+  .object({
+    type: z.literal("host.check_zcode_desktop_registration"),
+    sessionId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$/),
+  })
+  .strict();
+
+const hostRegisterZcodeDesktopTaskCommandSchema = z
+  .object({
+    type: z.literal("host.register_zcode_desktop_task"),
+    sessionId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$/),
+    cwd: z.string().min(1),
+    title: z.string().min(1).max(512),
+    apply: z.boolean(),
   })
   .strict();
 
@@ -1019,6 +1125,174 @@ const fileMetadataResultSchema = z.object({
   modifiedAtMs: z.number().nonnegative(),
   sizeBytes: z.number().int().nonnegative(),
 });
+
+const nativeClaudeHistoryMessageSchema = z
+  .object({
+    id: z.string().min(1),
+    role: z.enum(["user", "assistant"]),
+    text: z.string(),
+    timestamp: z.string().nullable(),
+    images: z.array(z.object({
+      id: z.string().min(1).max(256),
+      mimeType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif"]),
+    }).strict()).max(16).optional(),
+  })
+  .strict();
+
+const nativeClaudeHistoryResultSchema = z
+  .object({
+    contextUsage: z
+      .object({
+        usedTokens: z.number().int().nonnegative(),
+        observedAt: z.string().nullable(),
+        model: z.string().nullable(),
+      })
+      .strict()
+      .nullable(),
+    metadata: z
+      .object({
+        title: z.string().nullable(),
+        model: z.string().nullable(),
+        permissionMode: z.string().nullable(),
+      })
+      .strict(),
+    messages: z.array(nativeClaudeHistoryMessageSchema),
+    nextCursor: z.string().min(1).nullable(),
+    revision: z.string().min(1),
+    truncated: z.boolean(),
+  })
+  .strict();
+
+const nativeHistoryContextUsageSchema = z
+  .object({
+    usedTokens: z.number().int().nonnegative(),
+    observedAt: z.string().nullable(),
+    model: z.string().nullable(),
+    contextWindow: z.number().int().positive().nullable(),
+  })
+  .strict();
+
+const nativeHistoryResultSchema = z
+  .object({
+    contextUsage: nativeHistoryContextUsageSchema.nullable(),
+    metadata: z
+      .object({
+        title: z.string().nullable(),
+        model: z.string().nullable(),
+        permissionMode: z.string().nullable(),
+      })
+      .strict(),
+    messages: z.array(nativeClaudeHistoryMessageSchema),
+    nextCursor: z.string().min(1).nullable(),
+    revision: z.string().min(1),
+    truncated: z.boolean(),
+  })
+  .strict();
+
+const nativeHistoryProbeItemSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("ok"),
+      lastMessageTimestamp: z.string().nullable(),
+      revision: z.string().min(1),
+    })
+    .strict(),
+  z.object({ status: z.literal("missing") }).strict(),
+  z
+    .object({ status: z.literal("unavailable"), reason: z.string().min(1) })
+    .strict(),
+]);
+
+const nativeHistoryProbeResultSchema = z
+  .object({
+    items: z.array(nativeHistoryProbeItemSchema),
+  })
+  .strict();
+
+const zcodeQuotaWindowSchema = z
+  .object({
+    usedPercentage: z.number().min(0).max(100),
+    remainingPercentage: z.number().min(0).max(100),
+    nextResetTime: z.string().nullable(),
+  })
+  .strict();
+
+const zcodeQuotaToolCallsSchema = z
+  .object({
+    used: z.number().nonnegative().nullable(),
+    total: z.number().nonnegative().nullable(),
+    remaining: z.number().nonnegative().nullable(),
+    percentage: z.number().min(0).max(100).nullable(),
+    nextResetTime: z.string().nullable(),
+  })
+  .strict();
+
+const zcodeQuotaResultSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("ok"),
+      fetchedAt: z.string(),
+      fiveHour: zcodeQuotaWindowSchema.nullable(),
+      toolCalls: zcodeQuotaToolCallsSchema.nullable(),
+    })
+    .strict(),
+  z
+    .object({ status: z.literal("missing"), reason: z.string().min(1) })
+    .strict(),
+  z
+    .object({ status: z.literal("unavailable"), reason: z.string().min(1) })
+    .strict(),
+]);
+
+const zcodeDesktopRegistrationResultSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("registered"),
+      title: z.string().nullable(),
+      workspacePath: z.string().nullable(),
+      provider: z.string().nullable(),
+    })
+    .strict(),
+  z.object({ status: z.literal("not_registered") }).strict(),
+  z.object({ status: z.literal("unavailable"), reason: z.string().min(1) })
+    .strict(),
+]);
+
+const zcodeDesktopTaskRegistrationResultSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("already_registered"),
+      title: z.string().nullable(),
+      workspacePath: z.string().nullable(),
+      provider: z.string().nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("preflight_ok"),
+      title: z.string(),
+      workspacePath: z.string(),
+      provider: z.literal("glm"),
+      mode: z.string().min(1),
+      model: z.string().nullable(),
+      createdAt: z.number().int().nonnegative(),
+      updatedAt: z.number().int().nonnegative(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("registered"),
+      title: z.string(),
+      workspacePath: z.string(),
+      provider: z.literal("glm"),
+      backupPath: z.string(),
+    })
+    .strict(),
+  z.object({ status: z.literal("rejected"), reason: z.string().min(1) })
+    .strict(),
+  z.object({ status: z.literal("unavailable"), reason: z.string().min(1) })
+    .strict(),
+]);
 
 const workspaceStatusResultSchema = z.discriminatedUnion("outcome", [
   z
@@ -1768,6 +2042,69 @@ export const hostDaemonCommandRegistry = {
     resultSchema: fileMetadataResultSchema,
     transport: "onlineRpc",
     retryable: true,
+    flushEventsBeforeResult: false,
+    envLane: null,
+  }),
+  "host.read_native_claude_history": defineHostDaemonCommandDescriptor({
+    type: "host.read_native_claude_history",
+    schema: hostReadNativeClaudeHistoryCommandSchema,
+    resultSchema: nativeClaudeHistoryResultSchema,
+    transport: "onlineRpc",
+    retryable: true,
+    flushEventsBeforeResult: false,
+    envLane: null,
+  }),
+  "host.read_native_history": defineHostDaemonCommandDescriptor({
+    type: "host.read_native_history",
+    schema: hostReadNativeHistoryCommandSchema,
+    resultSchema: nativeHistoryResultSchema,
+    transport: "onlineRpc",
+    retryable: true,
+    flushEventsBeforeResult: false,
+    envLane: null,
+  }),
+  "host.read_native_image": defineHostDaemonCommandDescriptor({
+    type: "host.read_native_image",
+    schema: hostReadNativeImageCommandSchema,
+    resultSchema: nativeImageResultSchema,
+    transport: "onlineRpc",
+    retryable: true,
+    flushEventsBeforeResult: false,
+    envLane: null,
+  }),
+  "host.probe_native_history": defineHostDaemonCommandDescriptor({
+    type: "host.probe_native_history",
+    schema: hostProbeNativeHistoryCommandSchema,
+    resultSchema: nativeHistoryProbeResultSchema,
+    transport: "onlineRpc",
+    retryable: true,
+    flushEventsBeforeResult: false,
+    envLane: null,
+  }),
+  "host.read_zcode_quota": defineHostDaemonCommandDescriptor({
+    type: "host.read_zcode_quota",
+    schema: hostReadZcodeQuotaCommandSchema,
+    resultSchema: zcodeQuotaResultSchema,
+    transport: "onlineRpc",
+    retryable: true,
+    flushEventsBeforeResult: false,
+    envLane: null,
+  }),
+  "host.check_zcode_desktop_registration": defineHostDaemonCommandDescriptor({
+    type: "host.check_zcode_desktop_registration",
+    schema: hostCheckZcodeDesktopRegistrationCommandSchema,
+    resultSchema: zcodeDesktopRegistrationResultSchema,
+    transport: "onlineRpc",
+    retryable: true,
+    flushEventsBeforeResult: false,
+    envLane: null,
+  }),
+  "host.register_zcode_desktop_task": defineHostDaemonCommandDescriptor({
+    type: "host.register_zcode_desktop_task",
+    schema: hostRegisterZcodeDesktopTaskCommandSchema,
+    resultSchema: zcodeDesktopTaskRegistrationResultSchema,
+    transport: "onlineRpc",
+    retryable: false,
     flushEventsBeforeResult: false,
     envLane: null,
   }),

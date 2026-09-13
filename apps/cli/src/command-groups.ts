@@ -93,6 +93,11 @@ export const CORE_COMMAND_GROUPS: readonly CommandGroup[] = [
     (m) => (program, deps) => m.registerThemeCommands(program, deps.getUrl),
   ),
   group(
+    "typography",
+    () => import("./commands/typography.js"),
+    (m) => (program, deps) => m.registerTypographyCommands(program, deps.getUrl),
+  ),
+  group(
     "plugin",
     () => import("./commands/plugin.js"),
     (m) => (program, deps) => m.registerPluginCommands(program, deps.getUrl),

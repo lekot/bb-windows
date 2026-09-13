@@ -573,6 +573,33 @@ describe("ModelReasoningPicker", () => {
     expect(onSelectedProviderChange).toHaveBeenCalledWith("cursor");
   });
 
+  it("hides Cursor but keeps DeepSeek in the provider tabs and provider cycle", () => {
+    const { onSelectedProviderChange } = renderPicker({
+      pickerProviderOptions: [
+        ...providerOptions,
+        { value: "acp-cursor", label: "Cursor" },
+        { value: "acp-zcode", label: "ZCode" },
+        { value: "acp-opencode", label: "DeepSeek" },
+      ],
+      selectedProviderId: "acp-zcode",
+    });
+    const trigger = screen.getByRole("button", {
+      name: "Provider, model and reasoning",
+    });
+    fireEvent.click(trigger);
+
+    expect(screen.queryByTitle("Cursor")).toBeNull();
+    expect(screen.getByTitle("DeepSeek")).not.toBeNull();
+    expect(screen.getByTitle("ZCode")).not.toBeNull();
+
+    expect(
+      commandHandlers.get("modelPicker.cycleProviderBackward")?.({
+        target: trigger,
+      }),
+    ).toBe(true);
+    expect(onSelectedProviderChange).toHaveBeenCalledWith("claude-code");
+  });
+
   it("stays open while changing both the model and reasoning effort", () => {
     const { onModelChange, onReasoningChange } = renderPicker({
       modelOptions: [...codexModels, { value: "gpt-5.2", label: "GPT-5.2" }],

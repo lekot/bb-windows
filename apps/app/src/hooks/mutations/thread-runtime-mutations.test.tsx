@@ -22,8 +22,10 @@ import {
   threadQueuedMessagesQueryKey,
   threadTimelineQueryKey,
 } from "../queries/query-keys";
+import { nativeHistoryQueryKey } from "../queries/native-history-query";
 import {
   useCancelThreadPlan,
+  useCompactThread,
   useClearThreadGoal,
   useCreateThread,
   useCreateThreadQueuedMessage,
@@ -51,6 +53,8 @@ vi.mock("@/lib/sdk", async (importOriginal) => {
           setGroupBoundary: vi.fn(),
         },
         send: vi.fn(),
+        compact: vi.fn(),
+        nativeHistory: vi.fn(),
         spawn: vi.fn(),
       },
     },
@@ -125,6 +129,7 @@ const executionInputSources = {
 } satisfies ExistingThreadExecutionInputSources;
 
 beforeEach(() => {
+  vi.mocked(sdk.threads.nativeHistory).mockResolvedValue({ supported: false, revision: null, contextUsage: null, messages: [], metadata: { title: null, model: null, permissionMode: null }, truncated: false, nextCursor: null });
   vi.mocked(wsManager.getConnectionState).mockReturnValue("connected");
   vi.mocked(sdk.threads.cancelPlan).mockResolvedValue({ ok: true });
   vi.mocked(sdk.threads.clearGoal).mockResolvedValue({ ok: true });
@@ -155,6 +160,65 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+});
+
+describe("useCompactThread", () => {
+  it("single-flights synchronous double clicks into one compact call", async () => {
+    let releaseCompact!: () => void;
+    vi.mocked(sdk.threads.compact).mockImplementation(
+      () =>
+        new Promise<{ ok: true }>((resolve) => {
+          releaseCompact = () => resolve({ ok: true });
+        }),
+    );
+    const { wrapper } = createQueryClientTestHarness();
+    const { result } = renderHook(() => useCompactThread(), { wrapper });
+
+    await act(async () => {
+      result.current.request("thread-a");
+      result.current.request("thread-a");
+      result.current.request("thread-a");
+    });
+    expect(sdk.threads.compact).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(result.current.stateFor("thread-a").inFlight).toBe(true),
+    );
+    expect(result.current.stateFor("thread-b").inFlight).toBe(false);
+
+    await act(async () => {
+      releaseCompact();
+    });
+    await waitFor(() =>
+      expect(result.current.stateFor("thread-a").inFlight).toBe(false),
+    );
+  });
+
+  it("keeps a pending or failed compact scoped to its own thread", async () => {
+    let rejectCompact!: (error: Error) => void;
+    vi.mocked(sdk.threads.compact).mockImplementation(
+      () =>
+        new Promise<{ ok: true }>((_resolve, reject) => {
+          rejectCompact = reject;
+        }),
+    );
+    const { wrapper } = createQueryClientTestHarness();
+    const { result } = renderHook(() => useCompactThread(), { wrapper });
+
+    await act(async () => {
+      result.current.request("thread-a");
+    });
+    expect(result.current.stateFor("thread-b").error).toBeNull();
+
+    await act(async () => {
+      rejectCompact(new Error("provider refused"));
+    });
+    await waitFor(() =>
+      expect(result.current.stateFor("thread-a").error).toBe(
+        "provider refused",
+      ),
+    );
+    expect(result.current.stateFor("thread-b").error).toBeNull();
+  });
 });
 
 describe("thread runtime mutations", () => {
@@ -335,6 +399,26 @@ describe("thread runtime mutations", () => {
         threadId: "thread-1",
       }),
     );
+  });
+
+  it("does not send a prompt when native history refresh fails for a supported thread", async () => {
+    const { wrapper, queryClient } = createQueryClientTestHarness();
+    queryClient.setQueryData(threadQueryKey("thread-1"), makeThreadResponse({ providerId: "claude-code" }));
+    queryClient.setQueryData(nativeHistoryQueryKey("thread-1"), {
+      supported: true,
+      revision: "r1",
+      contextUsage: null,
+      messages: [],
+      nextCursor: null,
+      metadata: { title: null, model: null, permissionMode: null },
+      truncated: false,
+    });
+    vi.mocked(sdk.threads.nativeHistory).mockRejectedValue(new Error("Native history unavailable"));
+    const { result } = renderHook(() => useSendThreadMessage(), { wrapper });
+    await act(async () => {
+      await expect(result.current.mutateAsync({ id: "thread-1", mode: "auto", input: [{ type: "text", text: "Continue", mentions: [] }] })).rejects.toThrow("Native history unavailable");
+    });
+    expect(sdk.threads.send).not.toHaveBeenCalled();
   });
 
   it("returns the server's delivery so a queued message is not treated as a started turn", async () => {

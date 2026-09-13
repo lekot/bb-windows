@@ -1,5 +1,47 @@
 @import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+@import "@fontsource-variable/golos-text";
 @import "@/components/ui/theme.css";
+
+@font-face {
+  font-family: "BB Fact";
+  src: local("Fact");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "BB Frutiger";
+  src: local("Frutiger");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "BB Crassula";
+  src: local("Crassula");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "BB Magistral";
+  src: local("Magistral Cond");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "BB PT Mono";
+  src: local("PT Mono");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
 
 @layer base {
   /*

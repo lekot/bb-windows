@@ -26,6 +26,7 @@ import type {
 import { RuntimeManager } from "../../src/runtime-manager.js";
 import { noopEventSink } from "../../src/command-dispatch-support.js";
 import type { CommandDispatchOptions } from "../../src/command-dispatch-support.js";
+import type { NativeSessionResumeIntent } from "@bb/agent-runtime";
 import type { FetchProjectAttachment } from "../../src/project-attachments.js";
 
 const tempDirs: string[] = [];
@@ -112,6 +113,7 @@ interface FakeRuntimeState {
   renamedTitle: string | undefined;
   resumedBridgeLaunch: AgentRuntimeBridgeLaunch | undefined;
   resumedEnvironmentId: string | undefined;
+  resumedNativeSession: NativeSessionResumeIntent | undefined;
   resumedProviderThreadId: string | undefined;
   resumedThreadId: string | undefined;
   runningProviders: string[];
@@ -261,6 +263,7 @@ export function createFakeRuntime() {
     renamedTitle: undefined,
     resumedBridgeLaunch: undefined,
     resumedEnvironmentId: undefined,
+    resumedNativeSession: undefined,
     resumedProviderThreadId: undefined,
     resumedThreadId: undefined,
     runningProviders: [],
@@ -335,6 +338,7 @@ export function createFakeRuntime() {
       state.resumedEnvironmentId = args.environmentId;
       state.resumedThreadId = args.threadId;
       state.resumedProviderThreadId = args.providerThreadId;
+      state.resumedNativeSession = args.nativeSession;
       const providerThreadId =
         args.providerThreadId ?? `provider-${args.threadId}`;
       providerSessionsByThreadId.set(args.threadId, {
@@ -523,9 +527,14 @@ export async function runGitCommand(
 
 export async function cleanupTempDirs(): Promise<void> {
   await Promise.all(
-    tempDirs
-      .splice(0)
-      .map((dir) => fs.rm(dir, { recursive: true, force: true })),
+    tempDirs.splice(0).map((dir) =>
+      fs.rm(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: process.platform === "win32" ? 10 : 0,
+        retryDelay: 50,
+      }),
+    ),
   );
 }
 

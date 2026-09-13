@@ -144,3 +144,13 @@ Plugin host calls start immediately using the current environment while any call
 are active in that plugin worker. Changed or removed machine variables take
 effect on the next call after all active calls finish. Continuous overlapping
 calls can keep the previous values until the worker becomes idle.
+
+## Windows source lifecycle
+
+Use `scripts/windows/bb.ps1 -Action Start|Stop|Status` from PowerShell 7.
+`BB_WINDOWS_DATA_DIR` or `-DataDir` selects the instance; preserve that value
+across commands. `-ServerPort` and `-DaemonPort` override the default ports.
+The listener is loopback unless `-Lan` is explicitly passed. `-EnvFile` loads
+private provider environment variables. See `README.windows.md` for source
+installation and fast-forward updates; these scripts are not installed CLI
+subcommands. The Windows CLI entrypoint is `apps/host-daemon/dist/bb.cmd`.

@@ -203,7 +203,10 @@ function seedClaudeForkTranscripts(args: {
   }
 }
 
-function rewriteAcpLaunchSpec(line: string, replayCommand: string[]): string {
+export function rewriteAcpLaunchSpec(
+  line: string,
+  replayCommand: string[],
+): string {
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
@@ -225,14 +228,36 @@ function rewriteAcpLaunchSpec(line: string, replayCommand: string[]): string {
   ) {
     return line;
   }
-  const { modelCli: _modelCli, ...rest } = spec as Record<string, unknown>;
+  const rest = spec as Record<string, unknown>;
   providerOptions.acpLaunchSpec = {
     ...rest,
+    ...replayModelCli(rest.modelCli, replayCommand),
     command: replayCommand[0],
     args: replayCommand.slice(1),
     env: {},
   };
   return JSON.stringify(parsed);
+}
+
+export const REPLAY_LIST_MODELS_FLAG = "--replay-list-models";
+
+function replayModelCli(
+  modelCli: unknown,
+  replayCommand: string[],
+): { modelCli?: Record<string, unknown> } {
+  if (typeof modelCli !== "object" || modelCli === null) return {};
+  const recorded = modelCli as Record<string, unknown>;
+  const listArgs = Array.isArray(recorded.listArgs) ? recorded.listArgs : [];
+  if (listArgs.length === 0 || typeof recorded.selectFlag !== "string") {
+    return { modelCli: recorded };
+  }
+  return {
+    modelCli: {
+      ...recorded,
+      listArgs: [...replayCommand.slice(1), REPLAY_LIST_MODELS_FLAG],
+      selectFlag: replayCommand[1],
+    },
+  };
 }
 
 function parseWire(line: string): { method?: string; params?: unknown } | null {

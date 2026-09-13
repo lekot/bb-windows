@@ -11,6 +11,10 @@ interface VoiceTranscribeOptions {
   type?: string;
 }
 
+interface VoiceCorrectOptions {
+  json?: boolean;
+}
+
 export function registerVoiceCommands(
   program: Command,
   getUrl: () => string,
@@ -31,6 +35,22 @@ export function registerVoiceCommands(
         const result = await createCliBbSdk(getUrl()).system.transcribeVoice({
           file: blob,
           ...(opts.prompt ? { prompt: opts.prompt } : {}),
+        });
+        if (outputJson(opts, result)) return;
+        console.log(result.text);
+      }),
+    );
+
+  voice
+    .command("correct <text>")
+    .description(
+      "Correct an ASR transcription with BB's configured voice corrector",
+    )
+    .option("--json", "Print machine-readable JSON output")
+    .action(
+      action(async (text: string, opts: VoiceCorrectOptions) => {
+        const result = await createCliBbSdk(getUrl()).system.correctVoice({
+          text,
         });
         if (outputJson(opts, result)) return;
         console.log(result.text);

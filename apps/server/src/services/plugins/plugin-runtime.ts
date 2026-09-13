@@ -122,7 +122,24 @@ async function hashFile(
 }
 
 export function pluginSdkAliasFor(runtimePath: string): Record<string, string> {
+  const runtimeBase = runtimePath.endsWith(".js")
+    ? runtimePath.slice(0, -3)
+    : runtimePath;
   return {
+    [`${PLUGIN_SDK_SPECIFIER}/provider-bridge/acp`]:
+      `${runtimeBase}.provider-bridge-acp.js`,
+    [`${PLUGIN_SDK_SPECIFIER}/provider-bridge`]:
+      `${runtimeBase}.provider-bridge.js`,
+    [`${PLUGIN_SDK_SPECIFIER}/ai-services`]:
+      `${runtimeBase}.ai-services.js`,
+    [`${PLUGIN_SDK_SPECIFIER}/host`]: `${runtimeBase}.host.js`,
+    [`${LEGACY_PLUGIN_SDK_SPECIFIER}/provider-bridge/acp`]:
+      `${runtimeBase}.provider-bridge-acp.js`,
+    [`${LEGACY_PLUGIN_SDK_SPECIFIER}/provider-bridge`]:
+      `${runtimeBase}.provider-bridge.js`,
+    [`${LEGACY_PLUGIN_SDK_SPECIFIER}/ai-services`]:
+      `${runtimeBase}.ai-services.js`,
+    [`${LEGACY_PLUGIN_SDK_SPECIFIER}/host`]: `${runtimeBase}.host.js`,
     [PLUGIN_SDK_SPECIFIER]: runtimePath,
     [LEGACY_PLUGIN_SDK_SPECIFIER]: runtimePath,
   };

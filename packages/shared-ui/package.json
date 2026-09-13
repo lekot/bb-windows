@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./alert-dialog": {
+      "source": "./src/components/ui/alert-dialog.tsx",
+      "types": "./src/components/ui/alert-dialog.tsx",
+      "default": "./src/components/ui/alert-dialog.tsx"
+    },
     "./activity-row-styles": {
       "source": "./src/components/ui/activity-row-styles.ts",
       "types": "./src/components/ui/activity-row-styles.ts",

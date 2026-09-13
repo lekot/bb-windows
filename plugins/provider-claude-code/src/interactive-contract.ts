@@ -24,6 +24,7 @@ export const claudePermissionModeSchema = z.enum([
   "acceptEdits",
   "auto",
   "bypassPermissions",
+  "dontAsk",
   "plan",
 ]);
 export type ClaudePermissionMode = z.infer<typeof claudePermissionModeSchema>;

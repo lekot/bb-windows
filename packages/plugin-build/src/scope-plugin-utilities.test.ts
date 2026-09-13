@@ -98,14 +98,15 @@ describe("scopePluginUtilities", () => {
     );
   });
 
-  it("leaves theme variables and @property registrations unscoped", () => {
+  it("scopes theme variables and leaves @property registrations unscoped", () => {
     const css = [
       "@layer theme{:root{--color-red:red}}",
       '@property --tw-scale-x{syntax:"*";inherits:false}',
       "@layer utilities{.scale-x-50{--tw-scale-x:50%}}",
     ].join("");
     const scoped = scopePluginUtilities(css, ROOTS);
-    expect(scoped).toContain("@layer theme{:root{--color-red:red}}");
+    expect(scoped).toContain(`@layer theme{${SCOPE}{--color-red:red}}`);
+    expect(scoped).not.toContain("@layer theme{:root");
     expect(scoped).toContain(
       '@property --tw-scale-x{syntax:"*";inherits:false}',
     );
@@ -114,7 +115,7 @@ describe("scopePluginUtilities", () => {
 
   it("accepts a build with no utilities layer", () => {
     expect(scopePluginUtilities("@layer theme{:root{--a:1}}", ROOTS)).toBe(
-      "@layer theme{:root{--a:1}}",
+      `@layer theme{${SCOPE}{--a:1}}`,
     );
   });
 

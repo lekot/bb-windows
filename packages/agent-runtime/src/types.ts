@@ -1,4 +1,6 @@
 import type {
+  ReasoningLevel,
+  ServiceTier,
   PermissionMode,
   AvailableModel,
   ClientTurnRequestId,
@@ -129,6 +131,7 @@ export interface StartThreadArgs {
   disallowedTools?: readonly string[];
   instructionMode?: InstructionMode;
   fork?: {
+    resumeOriginal?: true;
     sourceProviderThreadId: string;
     sourceProviderCheckpointId?: string;
   };
@@ -176,6 +179,26 @@ export interface ResumeThreadArgs {
   dynamicTools?: DynamicTool[];
   disallowedTools?: readonly string[];
   instructionMode?: InstructionMode;
+  nativeSession?: NativeSessionResumeIntent;
+}
+
+export interface NativeSessionOverrides {
+  model: boolean;
+  permissions: boolean;
+  reasoningLevel: boolean;
+  serviceTier: boolean;
+}
+
+export interface NativeSessionBaselineExecution {
+  model: string;
+  permissionMode: PermissionMode;
+  reasoningLevel: ReasoningLevel;
+  serviceTier: ServiceTier;
+}
+
+export interface NativeSessionResumeIntent {
+  resumeOriginal: true;
+  baselineExecution: NativeSessionBaselineExecution;
 }
 
 export interface ResumeThreadResult {

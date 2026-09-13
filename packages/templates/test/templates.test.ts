@@ -48,6 +48,9 @@ describe("@bb/templates", () => {
 
     expect(rendered).toContain("You are working inside bb");
     expect(rendered).toContain("agentic IDE");
+    expect(rendered).toContain(
+      "[Module.bsl](src/CommonModules/Example/Module.bsl:42)",
+    );
     expect(rendered).not.toContain(
       "Ask the user a blocking question only when",
     );

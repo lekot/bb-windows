@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import {
   createConnection,
@@ -147,7 +148,7 @@ describe("third-party marketplaces", () => {
     const configFile = join(dataDir, "gitconfig");
     await writeFile(
       configFile,
-      `[url "${repo}"]\n\tinsteadOf = ${url}\n`,
+      `[url "${pathToFileURL(repo).href}"]\n\tinsteadOf = ${url}\n`,
       "utf8",
     );
     const previous = process.env.GIT_CONFIG_GLOBAL;

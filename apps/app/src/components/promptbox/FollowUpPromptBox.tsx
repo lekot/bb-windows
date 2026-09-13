@@ -143,6 +143,9 @@ export interface FollowUpComposerProps {
 type ContextWindowUsage = ComponentProps<
   typeof ThreadContextWindowIndicator
 >["usage"];
+type ThreadCompactActionState = ComponentProps<
+  typeof ThreadContextWindowIndicator
+>["compactState"];
 
 export interface FollowUpPromptBoxProps {
   id?: string;
@@ -152,6 +155,12 @@ export interface FollowUpPromptBoxProps {
   composer: FollowUpComposerProps | null;
   environmentSummary: ReactNode | null;
   contextWindowUsage: ContextWindowUsage | null;
+  contextWindowNote?: string | null;
+  contextWindowSourceLabel?: string | null;
+  contextTokenLabel?: string;
+  onRequestContextCompact?: () => void;
+  contextCompactState?: ThreadCompactActionState | null;
+  nativeQuotaIndicator?: ReactNode;
   execution: ExecutionControlsProps;
   permission: ExecutionPermissionConfig;
   executionReadOnly?: boolean;
@@ -223,6 +232,12 @@ function FollowUpPromptBoxWithComposer({
   composer,
   environmentSummary,
   contextWindowUsage,
+  contextWindowNote,
+  onRequestContextCompact,
+  contextCompactState,
+  contextWindowSourceLabel,
+  contextTokenLabel,
+  nativeQuotaIndicator,
   execution,
   permission,
   executionReadOnly,
@@ -766,8 +781,16 @@ function FollowUpPromptBoxWithComposer({
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {permissionControl}
-            {contextWindowUsage ? (
-              <ThreadContextWindowIndicator usage={contextWindowUsage} />
+            {nativeQuotaIndicator}
+            {contextWindowUsage || contextWindowNote ? (
+              <ThreadContextWindowIndicator
+                usage={contextWindowUsage}
+                note={contextWindowNote}
+                sourceLabel={contextWindowSourceLabel}
+                tokenLabel={contextTokenLabel}
+                onRequestCompact={onRequestContextCompact}
+                compactState={contextCompactState ?? null}
+              />
             ) : null}
           </div>
         </div>

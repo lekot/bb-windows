@@ -269,13 +269,19 @@ describe("writeHostFile", () => {
     const dir = await makeTempDir("bb-file-write-mode-");
     const created = path.join(dir, "created.env");
     await writeHostFile(writeCommand({ path: created, mode: 0o600 }));
-    expect((await fs.stat(created)).mode & 0o777).toBe(0o600);
+    const createdMode = (await fs.stat(created)).mode;
+    if (process.platform === "win32") {
+      expect(createdMode & 0o222).not.toBe(0);
+    } else {
+      expect(createdMode & 0o777).toBe(0o600);
+    }
 
     const existing = path.join(dir, "existing.env");
     await fs.writeFile(existing, "old", { mode: 0o644 });
     await fs.chmod(existing, 0o644);
+    const existingMode = (await fs.stat(existing)).mode & 0o777;
     await writeHostFile(writeCommand({ path: existing, mode: 0o600 }));
-    expect((await fs.stat(existing)).mode & 0o777).toBe(0o644);
+    expect((await fs.stat(existing)).mode & 0o777).toBe(existingMode);
   });
 
   it("rejects directory targets", async () => {

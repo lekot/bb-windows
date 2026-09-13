@@ -313,7 +313,7 @@ function resolveMermaidThemePalette(): MermaidThemePalette {
 function buildMermaidConfig(preferredTheme: Theme): MermaidConfig {
   return {
     darkMode: preferredTheme === "dark",
-    fontFamily: "Inter, sans-serif",
+    fontFamily: "var(--font-sans), sans-serif",
     securityLevel: "strict",
     startOnLoad: false,
     suppressErrorRendering: true,

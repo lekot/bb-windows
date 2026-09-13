@@ -31,7 +31,12 @@ export function useStickyFooterAvailableHeight(
         flexHeight += flexElement.offsetHeight;
       }
       const fixedHeight = footer.offsetHeight - flexHeight;
-      const shared = Math.max(0, scrollElement.clientHeight - fixedHeight);
+      const viewportHeight =
+        scrollElement.clientHeight +
+        (footer.hasAttribute("data-scroll-footer-external")
+          ? footer.offsetHeight
+          : 0);
+      const shared = Math.max(0, viewportHeight - fixedHeight);
       const next = Math.floor(shared / Math.max(1, flexElements.length));
       setAvailableHeight((current) => (current === next ? current : next));
     };

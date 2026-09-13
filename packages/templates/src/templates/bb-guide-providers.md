@@ -9,6 +9,12 @@ Provider commands
 
 Providers are agent backends (e.g., codex, claude-code). Each supports different models.
 
+On the Windows source fork, DeepSeek Harness reads inherited `DEEPSEEK_API_KEY`
+and resolves `dsh.cmd` on PATH unless `BB_DEEPSEEK_HARNESS_EXECUTABLE` selects
+another executable. OpenCode uses `BB_OPENCODE_EXECUTABLE` when supplied. These
+are launch-time settings: restart the instance after changing them. ZCode is a
+configured ACP agent with slug `zcode`, not an automatically installed CLI.
+
   bb provider list [--machine <id-or-name> | --environment <id>]
                                           List available providers
   bb provider models [providerId] [--machine <id-or-name> | --environment <id>]

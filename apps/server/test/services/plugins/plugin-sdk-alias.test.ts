@@ -7,5 +7,17 @@ describe("pluginSdkAliasFor", () => {
 
     expect(alias["@get-bb/plugin-sdk"]).toBe("/srv/plugin-sdk-runtime.js");
     expect(alias["@bb/plugin-sdk"]).toBe("/srv/plugin-sdk-runtime.js");
+    expect(alias["@get-bb/plugin-sdk/host"]).toBe(
+      "/srv/plugin-sdk-runtime.host.js",
+    );
+    expect(alias["@get-bb/plugin-sdk/ai-services"]).toBe(
+      "/srv/plugin-sdk-runtime.ai-services.js",
+    );
+    expect(alias["@get-bb/plugin-sdk/provider-bridge"]).toBe(
+      "/srv/plugin-sdk-runtime.provider-bridge.js",
+    );
+    expect(alias["@get-bb/plugin-sdk/provider-bridge/acp"]).toBe(
+      "/srv/plugin-sdk-runtime.provider-bridge-acp.js",
+    );
   });
 });

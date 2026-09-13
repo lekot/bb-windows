@@ -33,10 +33,15 @@ export interface ServerRuntimeConfig {
   inferenceModel: string;
   isDevelopment: boolean;
   marketplaceUrl: string;
+  localWhisperLanguage: string;
+  localWhisperUrl: string;
   openAiApiKey: string;
   serverPort: number;
   sharedSkillRoots: ProviderNativeSkillRoots;
   transcriptionModel: string;
+  voiceCorrectionApiKey: string;
+  voiceCorrectionModel: string;
+  voiceCorrectionUrl: string;
   appUrl?: string;
   devAppPort?: number;
   launchId?: string;

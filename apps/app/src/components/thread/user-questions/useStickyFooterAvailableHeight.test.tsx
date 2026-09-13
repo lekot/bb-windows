@@ -109,6 +109,37 @@ describe("useStickyFooterAvailableHeight", () => {
     expect(onHeight).toHaveBeenLastCalledWith(40);
   });
 
+  it("includes an external footer when the scroll port occupies the row above it", () => {
+    const observers = stubResizeObserver();
+    const scrollElement = document.createElement("div");
+    setHeight(scrollElement, 100);
+    const onHeight = vi.fn();
+    const { container } = render(
+      <BottomAnchorContext.Provider value={scrollBodyContext(scrollElement)}>
+        <div
+          {...{
+            [SCROLL_FOOTER_ATTRIBUTE]: "",
+            "data-scroll-footer-external": "",
+          }}
+        >
+          <Probe onHeight={onHeight} />
+        </div>
+      </BottomAnchorContext.Provider>,
+    );
+    const footer = container.querySelector<HTMLElement>(
+      `[${SCROLL_FOOTER_ATTRIBUTE}]`,
+    );
+    const form = container.querySelector<HTMLElement>("[data-testid=form]");
+    if (!footer || !form) throw new Error("missing fixture");
+
+    setHeight(footer, 500);
+    setHeight(form, 300);
+    act(() => {
+      for (const observer of observers) observer();
+    });
+    expect(onHeight).toHaveBeenLastCalledWith(400);
+  });
+
   it("splits the budget between forms in the same footer without a feedback loop", () => {
     const observers = stubResizeObserver();
     const scrollElement = document.createElement("div");

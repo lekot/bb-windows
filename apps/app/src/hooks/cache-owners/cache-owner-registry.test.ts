@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
@@ -149,6 +150,7 @@ const CACHE_OWNER_QUERY_KEY_IMPORTS: CacheOwnerQueryKeyImportRegistry = {
     "allProjectCommandsQueryKeyPrefix",
     "allSystemExecutionOptionsQueryKeyPrefix",
     "allSystemProvidersQueryKeyPrefix",
+    "allSystemUsageLimitsQueryKeyPrefix",
     "allSystemThemesQueryKeyPrefix",
     "allThreadStorageFilePreviewQueryKeyPrefix",
     "allThreadStorageFilesQueryKeyPrefix",
@@ -255,7 +257,7 @@ const CACHE_OWNER_QUERY_KEY_IMPORTS: CacheOwnerQueryKeyImportRegistry = {
 };
 
 function getSourceRoot(): string {
-  return path.resolve(new URL("../../", import.meta.url).pathname);
+  return path.resolve(fileURLToPath(new URL("../../", import.meta.url)));
 }
 
 function collectSourceFilePaths(directoryPath: string): string[] {

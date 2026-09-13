@@ -12,6 +12,32 @@ export interface TreeNode {
   children: TreeNode[];
 }
 
+export function normalizeRelativePath(path: string): string {
+  return path
+    .replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .replace(/^\.?\//, "")
+    .replace(/\/+$/, "");
+}
+
+export function includeActiveFile(
+  entries: readonly FlatEntry[],
+  activePath: string | null,
+  truncated: boolean,
+): readonly FlatEntry[] {
+  if (!truncated || activePath === null) return entries;
+  const normalizedActivePath = normalizeRelativePath(activePath);
+  if (
+    normalizedActivePath === "" ||
+    entries.some(
+      (entry) => normalizeRelativePath(entry.path) === normalizedActivePath,
+    )
+  ) {
+    return entries;
+  }
+  return [...entries, { path: normalizedActivePath, kind: "file" }];
+}
+
 export function buildTree(entries: readonly FlatEntry[]): TreeNode[] {
   const root: TreeNode = {
     path: "",
@@ -40,7 +66,7 @@ export function buildTree(entries: readonly FlatEntry[]): TreeNode[] {
   };
 
   for (const entry of entries) {
-    const path = normalize(entry.path);
+    const path = normalizeRelativePath(entry.path);
     if (path === "") continue;
     if (entry.kind === "directory") {
       directoryAt(path);
@@ -65,10 +91,6 @@ export function buildTree(entries: readonly FlatEntry[]): TreeNode[] {
   return root.children;
 }
 
-function normalize(path: string): string {
-  return path.replace(/^\.?\//, "").replace(/\/+$/, "");
-}
-
 function sortRecursively(node: TreeNode): void {
   node.children.sort((left, right) => {
     if (left.kind !== right.kind) return left.kind === "directory" ? -1 : 1;
@@ -80,7 +102,7 @@ function sortRecursively(node: TreeNode): void {
 }
 
 export function ancestorsOf(path: string): string[] {
-  const segments = normalize(path).split("/");
+  const segments = normalizeRelativePath(path).split("/");
   segments.pop();
   const ancestors: string[] = [];
   let current = "";

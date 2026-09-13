@@ -23,7 +23,7 @@ import {
 import { TooltipProvider } from "@bb/shared-ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { focusWithKeyboard } from "@/test/keyboard-focus";
 import {
   makeEnvironment,
@@ -34,8 +34,12 @@ import {
   EnvironmentProvisioningFailureRow,
   EnvironmentRow,
   GitStatusRow,
+  ProviderSessionRow,
   ThreadMetadataCard,
+  ThreadMetadataContent,
 } from "./ThreadMetadataContent";
+import { baseProps, makeThreadDetail } from "./ThreadMetadataContent.fixtures";
+import { createQueryClientTestHarness } from "@/test/queryClientTestHarness";
 
 const localHost = { locality: "local", identity: null } as const;
 const connectedLocalHost: EnvironmentDisplayHostContext = {
@@ -165,9 +169,123 @@ function renderEnvironmentRow(
   );
 }
 
+const SESSION_ID_A = "0199aa11-bb22-cc33-dd44-ee55ff667788";
+const SESSION_ID_B = "01a0904d-ea78-71c3-85ee-267caf69bb3f";
+
+const originalClipboard = navigator.clipboard;
+let writeText: ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  writeText = vi.fn().mockResolvedValue(undefined);
+  Object.assign(navigator, { clipboard: { writeText } });
+});
+
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  Object.assign(navigator, { clipboard: originalClipboard });
+});
+
+function renderProviderSessionRow(providerSessionId: string | null) {
+  return render(
+    <TooltipProvider>
+      <MemoryRouter>
+        <ProviderSessionRow providerSessionId={providerSessionId} />
+      </MemoryRouter>
+    </TooltipProvider>,
+  );
+}
+
+describe("ProviderSessionRow", () => {
+  it("renders the session id with a copy control", () => {
+    renderProviderSessionRow(SESSION_ID_A);
+
+    expect(screen.getByText(SESSION_ID_A).textContent).toBe(SESSION_ID_A);
+    expect(
+      screen.getByRole("button", { name: "Copy session ID" }),
+    ).toBeDefined();
+  });
+
+  it("copies the full session id only once the copy control is clicked", async () => {
+    renderProviderSessionRow(SESSION_ID_A);
+
+    expect(writeText).toHaveBeenCalledTimes(0);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copy session ID" }));
+    });
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith(SESSION_ID_A);
+  });
+
+  it("copies a truncated session id in full", async () => {
+    renderProviderSessionRow(SESSION_ID_A);
+
+    const value = screen.getByText(SESSION_ID_A);
+    expect(value.className).toContain("truncate");
+    expect(value.getAttribute("title")).toBe(SESSION_ID_A);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copy session ID" }));
+    });
+
+    expect(writeText).toHaveBeenCalledWith(SESSION_ID_A);
+  });
+
+  it("tracks the thread's current session id without copying on rerender", () => {
+    const { rerender, container } = renderProviderSessionRow(SESSION_ID_A);
+
+    rerender(
+      <TooltipProvider>
+        <MemoryRouter>
+          <ProviderSessionRow providerSessionId={SESSION_ID_B} />
+        </MemoryRouter>
+      </TooltipProvider>,
+    );
+    expect(screen.getByText(SESSION_ID_B).textContent).toBe(SESSION_ID_B);
+    expect(screen.queryByText(SESSION_ID_A)).toBeNull();
+
+    rerender(
+      <TooltipProvider>
+        <MemoryRouter>
+          <ProviderSessionRow providerSessionId={null} />
+        </MemoryRouter>
+      </TooltipProvider>,
+    );
+    expect(container.textContent).toBe("");
+    expect(writeText).toHaveBeenCalledTimes(0);
+  });
+
+  it("renders nothing while the provider session is not created yet", () => {
+    const { container } = renderProviderSessionRow(null);
+
+    expect(container.textContent).toBe("");
+  });
+
+  it("is wired into the info panel from the thread's own response field", () => {
+    const { wrapper: QueryWrapper } = createQueryClientTestHarness();
+    const infoPanel = (providerSessionId: string | null) => (
+      <QueryWrapper>
+        <TooltipProvider>
+          <MemoryRouter>
+            <ThreadMetadataContent
+              {...baseProps}
+              thread={makeThreadDetail({ providerSessionId })}
+            />
+          </MemoryRouter>
+        </TooltipProvider>
+      </QueryWrapper>
+    );
+    const { rerender } = render(infoPanel(SESSION_ID_B));
+    expect(screen.getByText(SESSION_ID_B).textContent).toBe(SESSION_ID_B);
+
+    rerender(infoPanel(null));
+    expect(screen.queryByText(SESSION_ID_B)).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Copy session ID" }),
+    ).toBeNull();
+  });
 });
 
 describe("ThreadMetadataCard", () => {

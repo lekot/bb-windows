@@ -297,6 +297,32 @@ const acpLooseConfigOptionSchema = z
   })
   .passthrough();
 
+function parseAcpConfigSelectOptions(options: unknown): z.infer<
+  typeof acpConfigOptionSelectOptionSchema
+>[] | undefined {
+  if (!Array.isArray(options)) {
+    return undefined;
+  }
+  return options.flatMap((entry) => {
+    const direct = acpConfigOptionSelectOptionSchema.safeParse(entry);
+    if (direct.success) {
+      return [direct.data];
+    }
+    if (
+      typeof entry !== "object" ||
+      entry === null ||
+      !("options" in entry) ||
+      !Array.isArray(entry.options)
+    ) {
+      return [];
+    }
+    return entry.options.flatMap((nested: unknown) => {
+      const parsed = acpConfigOptionSelectOptionSchema.safeParse(nested);
+      return parsed.success ? [parsed.data] : [];
+    });
+  });
+}
+
 function parseAcpConfigOptions(
   options: unknown[] | null | undefined,
   ctx: z.RefinementCtx,
@@ -313,7 +339,10 @@ function parseAcpConfigOptions(
     const isModelOption =
       loose.data.category === "model" || loose.data.id === "model";
     if (isModelOption) {
-      const strict = acpConfigOptionSchema.safeParse(option);
+      const strict = acpConfigOptionSchema.safeParse({
+        ...loose.data,
+        options: parseAcpConfigSelectOptions(loose.data.options),
+      });
       if (strict.success) {
         parsedOptions.push(strict.data);
         continue;
@@ -339,11 +368,7 @@ function parseAcpConfigOptions(
         : {}),
       ...(Array.isArray(loose.data.options)
         ? {
-            options: loose.data.options.flatMap((selectOption) => {
-              const parsed =
-                acpConfigOptionSelectOptionSchema.safeParse(selectOption);
-              return parsed.success ? [parsed.data] : [];
-            }),
+            options: parseAcpConfigSelectOptions(loose.data.options),
           }
         : {}),
     });
@@ -355,6 +380,22 @@ export const acpSessionNewResultSchema = z
   .object({
     sessionId: z.string(),
     models: acpSessionModelsSchema.optional(),
+    modes: z
+      .object({
+        currentModeId: z.string(),
+        availableModes: z
+          .array(
+            z
+              .object({
+                id: z.string(),
+                name: z.string().optional(),
+              })
+              .passthrough(),
+          )
+          .default([]),
+      })
+      .passthrough()
+      .optional(),
     configOptions: z
       .array(z.unknown())
       .nullable()
@@ -366,6 +407,22 @@ export const acpSessionNewResultSchema = z
 export const acpConfigStateResultSchema = z
   .object({
     models: acpSessionModelsSchema.optional(),
+    modes: z
+      .object({
+        currentModeId: z.string(),
+        availableModes: z
+          .array(
+            z
+              .object({
+                id: z.string(),
+                name: z.string().optional(),
+              })
+              .passthrough(),
+          )
+          .default([]),
+      })
+      .passthrough()
+      .optional(),
     configOptions: z
       .array(z.unknown())
       .nullable()
@@ -374,6 +431,7 @@ export const acpConfigStateResultSchema = z
   })
   .passthrough();
 export type AcpConfigStateResult = z.infer<typeof acpConfigStateResultSchema>;
+export type AcpSessionModes = NonNullable<AcpConfigStateResult["modes"]>;
 
 export const acpSessionForkResultSchema = acpConfigStateResultSchema.extend({
   sessionId: z.string(),

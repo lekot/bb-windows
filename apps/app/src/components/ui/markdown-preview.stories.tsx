@@ -160,9 +160,8 @@ the text column — no breakout, nothing fancy.
 
 The paragraph after the table picks up at the same column width.`;
 
-const BREAKOUT_TABLE_MARKDOWN = `When a table is wider than the text column but still fits inside the
-container's breakout width, it extends past the column on the right —
-spilling into the gutter where the surrounding paragraph isn't reaching.
+const WIDE_TABLE_MARKDOWN = `A table wider than the text column stays inside the message.
+Its contents scroll horizontally without moving the surrounding text.
 
 | Identifier | Origin | Worker host | Status | Last activity | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -170,12 +169,10 @@ spilling into the gutter where the surrounding paragraph isn't reaching.
 | \`thr_9d44ee01\` | codex | localhost:3002 | idle | 2026-05-10 22:11 | flagged for replay |
 | \`thr_a7b21c89\` | claude-code | localhost:38887 | error | 2026-05-09 13:02 | exited 137 (oom) |
 
-The paragraph below returns to the regular column width, so the contrast
-between the breakout table and the text flow is clear.`;
+The paragraph below shares the same column boundaries as the table wrapper.`;
 
-const SCROLLING_TABLE_MARKDOWN = `When the intrinsic table width exceeds even the breakout cap, the wrapper
-caps at \`min(1100px, 100cqw − 2rem)\` and the table itself scrolls
-horizontally inside it.
+const SCROLLING_TABLE_MARKDOWN = `When the intrinsic table width exceeds the message column,
+the wrapper stays at the column width and the table scrolls horizontally inside it.
 
 | Identifier | Origin | Worker host | Status | Branch | Last activity | Runtime | Tokens in | Tokens out | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -251,16 +248,16 @@ export function Overview() {
         </PreviewStage>
       </StoryRow>
       <StoryRow
-        label="table — wider than column (breakout)"
-        hint="table extends past the text column into the container's right gutter"
+        label="table — wider than column (scrolls)"
+        hint="table stays inside the text column with local horizontal scrolling"
       >
         <PreviewStage>
-          <MarkdownPreview content={BREAKOUT_TABLE_MARKDOWN} />
+          <MarkdownPreview content={WIDE_TABLE_MARKDOWN} />
         </PreviewStage>
       </StoryRow>
       <StoryRow
-        label="table — wider than breakout (scrolls)"
-        hint="table caps at the breakout width and scrolls horizontally inside the wrapper"
+        label="table — many columns (scrolls)"
+        hint="table wrapper shares the paragraph width and scrolls internally"
       >
         <PreviewStage>
           <MarkdownPreview content={SCROLLING_TABLE_MARKDOWN} />

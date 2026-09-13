@@ -69,6 +69,10 @@ import {
 } from "./SelectableMessageProse.js";
 import type { ThreadTimelinePluginMessageAction } from "./types.js";
 import type { PromptDraftAttachment } from "@bb/client-core";
+import { parseTaskNotification } from "./task-notification";
+import { TaskNotificationCard } from "./TaskNotificationCard";
+import { parseNativeServiceMessage } from "./native-service-message";
+import { ClaudeServiceMessageCard } from "./ClaudeServiceMessageCard";
 import { buildMarkdownMessageLinkRouting } from "@/components/ui/markdown-message-link-routing";
 
 interface ConversationMessageContentBaseProps {
@@ -83,6 +87,7 @@ interface ConversationMessageContentBaseProps {
 }
 
 interface ConversationMessageContentUserProps extends ConversationMessageContentBaseProps {
+  threadId?: string;
   role: "user";
   mobileActionDisplay?: "inline" | "overflow";
   originKind: ThreadOriginKind | null;
@@ -100,7 +105,6 @@ interface ConversationMessageContentUserProps extends ConversationMessageContent
   senderIsPluginSideChat: boolean;
   systemMessageKind: TimelineUserConversationRow["systemMessageKind"];
   systemMessageSubject: TimelineUserConversationRow["systemMessageSubject"];
-  threadId?: string;
   turnRequest: TimelineUserConversationRow["turnRequest"];
 }
 
@@ -652,6 +656,22 @@ export function ConversationMessageContent(
     [attachments],
   );
 
+  if (attachments === null) {
+    const notification = parseTaskNotification(text);
+    if (notification !== null) {
+      return (
+        <TaskNotificationCard
+          threadId={props.threadId}
+          notification={notification}
+          originalText={text}
+          onOpenLocalFileLink={onOpenLocalFileLink}
+        />
+      );
+    }
+    const service = parseNativeServiceMessage(text);
+    if (service !== null)
+      return <ClaudeServiceMessageCard message={service} originalText={text} />;
+  }
   if (props.role === "user") {
     return (
       <UserConversationMessage

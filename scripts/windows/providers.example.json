@@ -1,0 +1,7 @@
+[
+  { "id": "codex", "model": "" },
+  { "id": "claude-code", "model": "" },
+  { "id": "acp-zcode", "model": "" },
+  { "id": "acp-opencode", "model": "" },
+  { "id": "acp-deepseek-harness", "model": "" }
+]

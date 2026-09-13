@@ -1,0 +1,38 @@
+{
+  "name": "bb-plugin-windows-screen",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "On-demand Windows host screenshots. Visible to all users with bb access.",
+  "engines": {
+    "bb": ">=0.0",
+    "bbPluginSdk": ">=0.4.13"
+  },
+  "bb": {
+    "name": "Windows Screen",
+    "description": "Capture the session host screen on demand; no remote input.",
+    "branding": {
+      "icon": "AppWindow"
+    },
+    "server": "./server.ts",
+    "host": "./host.ts",
+    "app": "./app.tsx"
+  },
+  "scripts": {
+    "prepare:bundled": "bb-plugin-build prepare-bundled",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@bb/plugin-build": "workspace:*",
+    "@get-bb/plugin-sdk": "workspace:*",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^4.1.1"
+  }
+}

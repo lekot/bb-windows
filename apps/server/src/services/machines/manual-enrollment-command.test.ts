@@ -14,17 +14,20 @@ const bootstrap: EnrollmentBootstrap = {
   headers: { "x-access": "private'$value" },
 };
 
-it("passes the exact bootstrap and arguments to the installer without shell expansion", () => {
-  const script = enrolledInstallerScript(
-    'printf "%s\\n%s\\n%s" "$1" "$2" "$BB_ENROLLMENT"',
-    bootstrap,
-  );
-  const result = spawnSync("sh", ["-c", script], { encoding: "utf8" });
-  expect(result.status).toBe(0);
-  expect(result.stdout).toBe(
-    `--bootstrap-env\nBB_ENROLLMENT\n${JSON.stringify(bootstrap)}`,
-  );
-});
+it.skipIf(process.platform === "win32")(
+  "passes the exact bootstrap and arguments to the installer without shell expansion",
+  () => {
+    const script = enrolledInstallerScript(
+      'printf "%s\\n%s\\n%s" "$1" "$2" "$BB_ENROLLMENT"',
+      bootstrap,
+    );
+    const result = spawnSync("sh", ["-c", script], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(
+      `--bootstrap-env\nBB_ENROLLMENT\n${JSON.stringify(bootstrap)}`,
+    );
+  },
+);
 
 it("builds the transient curl command from the enrollment bootstrap", () => {
   expect(manualEnrollmentCommand(bootstrap)).toBe(

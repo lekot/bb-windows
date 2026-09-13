@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   CUSTOM_CODE_THEME_JSON_MAX_LENGTH,
   codeThemeNameSchema,
@@ -31,7 +31,12 @@ function resolveWithinRoot(
     throw new Error(`${label} must be relative, got "${entry}"`);
   }
   const resolved = resolve(rootDir, entry);
-  if (resolved !== rootDir && !resolved.startsWith(rootDir + "/")) {
+  const relativePath = relative(rootDir, resolved);
+  if (
+    relativePath === ".." ||
+    relativePath.startsWith(`..${sep}`) ||
+    isAbsolute(relativePath)
+  ) {
     throw new Error(`${label} escapes the theme directory: "${entry}"`);
   }
   return resolved;

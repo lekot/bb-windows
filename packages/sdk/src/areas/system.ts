@@ -25,11 +25,15 @@ import type {
   SystemUsageLimitsQuery,
   SystemVersionQuery,
   SystemVersionResponse,
+  SystemVoiceCorrectionResponse,
   SystemVoiceTranscriptionResponse,
   UiPreferenceResponse,
   UiPreferencesResponse,
 } from "@bb/server-contract";
-import { systemVoiceTranscriptionResponseSchema } from "@bb/server-contract";
+import {
+  systemVoiceCorrectionResponseSchema,
+  systemVoiceTranscriptionResponseSchema,
+} from "@bb/server-contract";
 import {
   readExecutionOptions,
   signalRequestArgs,
@@ -63,6 +67,11 @@ export interface SystemVoiceTranscriptionArgs {
   signal?: AbortSignal;
 }
 
+export interface SystemVoiceCorrectionArgs {
+  signal?: AbortSignal;
+  text: string;
+}
+
 export type SystemAttentionResult = SystemAttentionResponse;
 export type SystemConfigResult = SystemConfigResponse;
 export type SystemExecutionOptionsResult = SystemExecutionOptionsResponse;
@@ -75,6 +84,7 @@ export interface SystemCliSkillsStatusArgs {
 export type SystemCliSkillsStatusResult = SystemCliSkillsStatusResponse;
 export type SystemInstallCliSkillsResult = SystemInstallCliSkillsResponse;
 export type SystemVoiceTranscriptionResult = SystemVoiceTranscriptionResponse;
+export type SystemVoiceCorrectionResult = SystemVoiceCorrectionResponse;
 export type SystemUpdateExperimentsResult = Experiments;
 export type SystemUpdateGeneralSettingsResult = AppSettings & {
   showUnhandledProviderEvents?: boolean;
@@ -132,6 +142,9 @@ export interface SystemArea {
   transcribeVoice(
     args: SystemVoiceTranscriptionArgs,
   ): Promise<SystemVoiceTranscriptionResult>;
+  correctVoice(
+    args: SystemVoiceCorrectionArgs,
+  ): Promise<SystemVoiceCorrectionResult>;
   uiPreferences: SystemUiPreferencesArea;
   updateExperiments(args: Experiments): Promise<SystemUpdateExperimentsResult>;
   updateGeneralSettings(
@@ -255,6 +268,15 @@ export function createSystemArea(args: CreateSdkAreaArgs): SystemArea {
       return systemVoiceTranscriptionResponseSchema.parse(
         await response.json(),
       );
+    },
+    async correctVoice(input) {
+      const response = await transport.resolve(
+        transport.api.v1.system["voice-correction"].$post(
+          { json: { text: input.text } },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+      return systemVoiceCorrectionResponseSchema.parse(await response.json());
     },
     async updateExperiments(input) {
       return transport.readJson(

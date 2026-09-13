@@ -2105,7 +2105,7 @@ describe("buildThreadTimelineFromEvents", () => {
     },
   );
 
-  it("keeps system error message and detail as separate row fields", () => {
+  it("shows the start failure cause while preserving full diagnostic detail", () => {
     const rows = buildTimelineRows([
       systemErrorEvent({
         code: "thread_command_failed",
@@ -2120,10 +2120,25 @@ describe("buildThreadTimelineFromEvents", () => {
       expect.objectContaining({
         systemKind: "error",
         status: "error",
-        title: "Command thread/start failed",
+        title: "Error: Cannot find claude code binary",
         detail:
           "Error: Cannot find claude code binary\n  at resolveBinary (sdk.js:42)\n  at start (sdk.js:88)",
       }),
+    ]);
+  });
+
+  it("shows the ACP reasoning failure in the collapsed start error", () => {
+    const cause = "ACP reasoning level is unavailable: medium";
+    const rows = buildTimelineRows([
+      systemErrorEvent({
+        code: "thread_command_failed",
+        message: "Command thread.start failed",
+        detail: cause,
+        seq: 1,
+      }),
+    ]);
+    expect(collectSystemRows(rows)).toEqual([
+      expect.objectContaining({ title: cause, detail: cause }),
     ]);
   });
 

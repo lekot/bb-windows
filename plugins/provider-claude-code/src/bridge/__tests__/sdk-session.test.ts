@@ -74,8 +74,14 @@ function keepSdkStreamOpen(): void {
   });
 }
 
+const originalGetuidDescriptor = Object.getOwnPropertyDescriptor(process, "getuid");
+
 function mockProcessUid(uid: number): void {
-  vi.spyOn(process, "getuid").mockReturnValue(uid);
+  Object.defineProperty(process, "getuid", {
+    configurable: true,
+    writable: true,
+    value: vi.fn(() => uid),
+  });
 }
 
 function waitForAsyncWork(): Promise<void> {
@@ -97,6 +103,11 @@ describe("SdkSession", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    if (originalGetuidDescriptor) {
+      Object.defineProperty(process, "getuid", originalGetuidDescriptor);
+    } else {
+      Reflect.deleteProperty(process, "getuid");
+    }
   });
 
   it("starts with no session id", () => {

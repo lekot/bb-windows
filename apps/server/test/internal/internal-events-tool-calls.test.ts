@@ -3,6 +3,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { eq } from "drizzle-orm";
 import {
   closeSession,
+  createPendingInteraction,
+  getActivePendingInteractionForThread,
   events,
   getEnvironment,
   getThread,
@@ -34,6 +36,7 @@ import {
 } from "../helpers/seed.js";
 import { withTestHarness } from "../helpers/test-app.js";
 import type { TestAppHarness } from "../helpers/test-app.js";
+import { createCommandApprovalPayload } from "../helpers/pending-interactions.js";
 import { setPluginAgentContributions } from "../../src/services/plugins/plugin-agent-contributions.js";
 import type { PluginAgentToolRecord } from "../../src/services/plugins/plugin-api.js";
 
@@ -266,6 +269,64 @@ describe("internal event and tool-call routes", () => {
       }
     });
   });
+
+  it.each(["completed", "failed", "interrupted"] as const)(
+    "clears pending approvals when a turn is %s",
+    async (status) => {
+      await withTestHarness(async (harness) => {
+        const { session } = seedHostSession(harness.deps);
+        const { project } = seedProjectWithSource(harness.deps, {
+          hostId: session.hostId,
+        });
+        const environment = seedEnvironment(harness.deps, {
+          hostId: session.hostId,
+          projectId: project.id,
+        });
+        const thread = seedThread(harness.deps, {
+          projectId: project.id,
+          environmentId: environment.id,
+          status: "active",
+        });
+        createPendingInteraction(harness.db, {
+          threadId: thread.id,
+          turnId: "turn-approval",
+          providerId: thread.providerId,
+          providerThreadId: "provider-1",
+          providerRequestId: "approval-1",
+        payload: JSON.stringify(createCommandApprovalPayload()),
+        });
+        const response = await postEventBatch({
+          harness,
+          sessionId: session.id,
+          events: [
+            {
+              threadId: thread.id,
+              event: {
+                type: "turn/started",
+                threadId: thread.id,
+                providerThreadId: "provider-1",
+                scope: turnScope("turn-approval"),
+              },
+            },
+            {
+              threadId: thread.id,
+              event: {
+                type: "turn/completed",
+                threadId: thread.id,
+                providerThreadId: "provider-1",
+                scope: turnScope("turn-approval"),
+                status,
+              },
+            },
+          ],
+        });
+        expect(response.status).toBe(200);
+        expect(
+          getActivePendingInteractionForThread(harness.db, thread.id),
+        ).toBeNull();
+      });
+    },
+  );
 
   it("appends event batches and returns accepted event indexes", async () => {
     await withTestHarness(async (harness) => {

@@ -363,6 +363,92 @@ const ONLINE_RPC_RESPONSE_RESULT_FIXTURES: OnlineRpcResponseResultFixtures = {
     modifiedAtMs: 1234,
     sizeBytes: 42,
   },
+  "host.read_native_claude_history": {
+    contextUsage: null,
+    nextCursor: null,
+    revision: "1:2:3",
+    messages: [
+      {
+        id: "05aaff59-3729-424f-a6a1-6ce58cf2cff3",
+        role: "assistant",
+        text: "Native history",
+        timestamp: null,
+      },
+    ],
+    metadata: {
+      title: null,
+      model: "claude-fable-5",
+      permissionMode: "acceptEdits",
+    },
+    truncated: false,
+  },
+  "host.read_native_history": {
+    contextUsage: {
+      usedTokens: 22003,
+      observedAt: "2026-09-07T10:35:52.527Z",
+      model: "gpt-5.6-luna",
+      contextWindow: 258400,
+    },
+    nextCursor: null,
+    revision: "1:2:3:4",
+    messages: [
+      {
+        id: "msg_01a07723-737e-7300-baed-ca14b2d6e232",
+        role: "user",
+        text: "Native history",
+        timestamp: "2026-09-06T14:33:27.166Z",
+      },
+    ],
+    metadata: {
+      title: null,
+      model: "gpt-5.6-luna",
+      permissionMode: "accept-edits",
+    },
+    truncated: false,
+  },
+  "host.read_native_image": {
+    mimeType: "image/png",
+    base64: "aGVsbG8=",
+  },
+  "host.probe_native_history": {
+    items: [
+      {
+        status: "ok",
+        lastMessageTimestamp: "2026-09-07T10:35:52.527Z",
+        revision: "1:2:3:4",
+      },
+      { status: "missing" },
+    ],
+  },
+  "host.read_zcode_quota": {
+    status: "ok",
+    fetchedAt: "2026-09-07T18:39:40.501Z",
+    fiveHour: {
+      usedPercentage: 28,
+      remainingPercentage: 72,
+      nextResetTime: "2026-09-08T04:44:03.428Z",
+    },
+    toolCalls: {
+      used: 18,
+      total: 1000,
+      remaining: 982,
+      percentage: 1,
+      nextResetTime: null,
+    },
+  },
+  "host.check_zcode_desktop_registration": {
+    status: "registered",
+    title: "Test session",
+    workspacePath: "C:\\test",
+    provider: "glm",
+  },
+  "host.register_zcode_desktop_task": {
+    status: "registered",
+    title: "Test session",
+    workspacePath: "C:\\test",
+    provider: "glm",
+    backupPath: "C:\\test\\tasks-index.sqlite.bb-backup-2026-09-09T00-00-00-000Z",
+  },
   "host.read_file": {
     path: "/tmp/report.html",
     content: "<!doctype html>",
@@ -728,6 +814,8 @@ const INTENTIONAL_OPTIONAL_HOST_DAEMON_FIELDS: Record<string, string> = {
     "thread.start omits fork unless the new thread should clone an existing provider session; absent means a normal start.",
   "hostDaemonCommandSchema.fork.sourceProviderCheckpointId":
     "thread.start.fork names a checkpoint only when the clone should stop at an earlier source turn; absent means clone the session tip.",
+  "hostDaemonCommandSchema.fork.resumeOriginal":
+    "thread.start.fork marks the explicit original-session resume mode; absence keeps normal fork behavior.",
   "hostDaemonCommandSchema.inputGroups":
     "thread.start and turn.submit omit inputGroups for ordinary single user-message turns; presence preserves grouped user messages within one turn.",
   "hostDaemonCommandSchema.disallowedTools":
@@ -1003,7 +1091,7 @@ const CONTRIBUTED_ENV = [
 
 describe("host-daemon command schemas", () => {
   it("uses the current host-daemon protocol version", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(207);
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(208);
     expect(HOST_ARTIFACT_MAX_BYTES).toBe(256 * 1024 * 1024);
   });
 
@@ -1791,6 +1879,7 @@ describe("host-daemon command schemas", () => {
           projectId: "proj_123",
           providerId: "codex",
           providerThreadId: "prov_123",
+          nativeSession: null,
           instructions: "Be concise.",
           dynamicTools: [],
           contributedEnv: [],
@@ -1974,6 +2063,7 @@ describe("host-daemon command schemas", () => {
           projectId: "proj_123",
           providerId: "codex",
           providerThreadId: "provider_123",
+        nativeSession: null,
           instructions: "Be a helpful coding agent.",
           dynamicTools: [],
           contributedEnv: [],
@@ -2069,6 +2159,7 @@ describe("host-daemon command schemas", () => {
         projectId: "proj_123",
         providerId: "codex",
         providerThreadId: "provider_123",
+        nativeSession: null,
         instructions: "Be a helpful coding agent.",
         dynamicTools: [],
         contributedEnv: [],
@@ -2167,6 +2258,7 @@ describe("host-daemon command schemas", () => {
         projectId: "proj_123",
         providerId: "acp-local",
         providerThreadId: "provider_123",
+        nativeSession: null,
         instructions: "Be a helpful thread.",
         dynamicTools: [],
         contributedEnv: CONTRIBUTED_ENV,
@@ -2267,6 +2359,7 @@ describe("host-daemon command schemas", () => {
         projectId: "proj_123",
         providerId: "echo-agent",
         providerThreadId: "provider_123",
+        nativeSession: null,
         bridgeLaunch,
         instructions: "Be a helpful thread.",
         dynamicTools: [],
@@ -2410,6 +2503,7 @@ describe("host-daemon command schemas", () => {
           projectId: "proj_123",
           providerId: "codex",
           providerThreadId: "provider_123",
+        nativeSession: null,
           instructions: "Be a helpful coding agent.",
           dynamicTools: [],
           contributedEnv: [],
@@ -2456,6 +2550,7 @@ describe("host-daemon command schemas", () => {
           projectId: "proj_123",
           providerId: "codex",
           providerThreadId: "provider_123",
+        nativeSession: null,
           instructions: "Be a helpful coding agent.",
           dynamicTools: [],
           contributedEnv: [],
@@ -2591,6 +2686,7 @@ describe("host-daemon command schemas", () => {
           projectId: "proj_123",
           providerId: "codex",
           providerThreadId: "provider_123",
+        nativeSession: null,
           instructions: "Be a helpful coding agent.",
           dynamicTools: [],
           contributedEnv: [],
@@ -3825,6 +3921,14 @@ describe("host-daemon session schemas", () => {
         testCase.name,
       );
     }
+  });
+
+  it("accepts native Claude history host RPC successes through the websocket", () => {
+    expectHostRpcResponseRoundTrip(
+      "host.read_native_claude_history",
+      ONLINE_RPC_RESPONSE_RESULT_FIXTURES["host.read_native_claude_history"],
+      "native Claude history",
+    );
   });
 
   it("round-trips every settled command response success variant through daemon websocket schemas", () => {

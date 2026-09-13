@@ -438,9 +438,12 @@ export interface ProviderUsageQueryState {
   isLoading: boolean;
 }
 
+const PROVIDER_USAGE_ERROR_RETRY_INTERVAL_MS = 5 * 60_000;
+
 interface UseSystemProviderUsageLimitsArgs extends QueryOptions {
   hostId?: string;
   providerIds: readonly string[];
+  refetchIntervalMs?: number | false;
 }
 
 export function useSystemProviderUsageLimits(
@@ -456,9 +459,19 @@ export function useSystemProviderUsageLimits(
           ...(args.hostId === undefined ? {} : { hostId: args.hostId }),
           providerId,
           signal,
-        }),
+      }),
       enabled,
       ...FOCUS_OWNED_LIVE_QUERY_POLICY,
+      refetchInterval: (query: {
+        state: { data: ProviderUsageResponse | undefined };
+      }) => {
+        const providerUsage = query.state.data?.[providerId];
+        if (providerUsage?.status === "error") {
+          return PROVIDER_USAGE_ERROR_RETRY_INTERVAL_MS;
+        }
+        return args.refetchIntervalMs ?? false;
+      },
+      refetchIntervalInBackground: false,
     })),
   });
   const usage: ProviderUsageResponse = {};

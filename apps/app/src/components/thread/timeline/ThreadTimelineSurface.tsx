@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type {
   ActiveThinking,
   ThreadOriginKind,
@@ -11,9 +18,14 @@ import { ConversationTimeline } from "@/components/ui/conversation.js";
 import { HeightTransition } from "@/components/ui/height-transition.js";
 import { Icon } from "@bb/shared-ui/icon";
 import { Skeleton } from "@bb/shared-ui/skeleton";
-import { useSystemConfig } from "@/hooks/queries/system-queries";
+import { useSystemConfig, useSystemProviderInfo } from "@/hooks/queries/system-queries";
 import { toUserAttachmentImageSrc } from "@/lib/user-attachment-images";
 import { ThreadTimelineRows } from "./ThreadTimelineRows.js";
+import { useNativeHistory } from "@/hooks/queries/native-history-query";
+import { useThread } from "@/hooks/queries/thread-queries";
+import { useBottomAnchoredScroll } from "@/components/ui/bottom-anchored-scroll-body.js";
+import { isRunningThreadRuntimeDisplayStatus } from "@bb/client-core";
+import { mergeNativeTimeline } from "./native-history-timeline.js";
 import { useAutoLoadOlderRows } from "./useAutoLoadOlderRows.js";
 import { TimelineStatusIndicator } from "./TimelineStatusIndicator.js";
 import type { TimelineTitleActionResolver } from "./TimelineTitleView.js";
@@ -177,7 +189,71 @@ export function ThreadTimelineSurface({
   unreadDividerPlacement,
   workspaceRootPath,
 }: ThreadTimelineSurfaceProps) {
+  const resolveAttachmentImageSrc = useCallback(
+    (path: string, projectId?: string) =>
+      toUserAttachmentImageSrc(path, projectId, threadId),
+    [threadId],
+  );
   const systemConfigQuery = useSystemConfig();
+  const thread = useThread(threadId);
+  const providerInfo = useSystemProviderInfo({
+    providerId: thread.data?.providerId,
+  });
+  const nativeHistory = useNativeHistory(
+    threadId,
+    providerInfo?.capabilities.nativeHistoryReader !== undefined,
+  );
+  const useNative = nativeHistory.data?.supported === true;
+  const bottomAnchor = useBottomAnchoredScroll();
+  const [hasNewMessages, setHasNewMessages] = useState(false);
+  const previousTail = useRef<string | null>(null);
+  const tailId = nativeHistory.messages.at(-1)?.id ?? null;
+  useEffect(() => {
+    previousTail.current = null;
+    setHasNewMessages(false);
+  }, [threadId]);
+  useEffect(() => {
+    if (
+      previousTail.current !== null &&
+      tailId !== previousTail.current &&
+      !bottomAnchor?.isAtBottom
+    ) {
+      setHasNewMessages(true);
+    }
+    previousTail.current = tailId;
+    if (bottomAnchor?.isAtBottom) setHasNewMessages(false);
+  }, [tailId, bottomAnchor?.isAtBottom]);
+  useEffect(() => {
+    if (nativeHistory.isFetching && !bottomAnchor?.isAtBottom)
+      bottomAnchor?.captureScrollAnchor();
+  }, [nativeHistory.isFetching, bottomAnchor]);
+  const unifiedRows = useMemo(
+    () =>
+      useNative
+        ? mergeNativeTimeline({
+            threadId,
+            messages: nativeHistory.messages,
+            rows: timelineRows,
+            running: isRunningThreadRuntimeDisplayStatus(
+              threadRuntimeDisplayStatus,
+            ),
+          })
+        : timelineRows,
+    [
+      useNative,
+      threadId,
+      nativeHistory.messages,
+      timelineRows,
+      threadRuntimeDisplayStatus,
+    ],
+  );
+  const hasOlderRows = useNative
+    ? nativeHistory.hasOlder
+    : hasOlderTimelineRows;
+  const loadingOlderRows = useNative
+    ? nativeHistory.isLoadingOlder
+    : isLoadingOlderTimelineRows;
+  const loadOlderRows = useNative ? nativeHistory.loadOlder : onLoadOlderRows;
   const timelineWindowingEnabled =
     systemConfigQuery.data?.experiments.timelineWindowing ?? false;
   const showActiveThinking =
@@ -192,86 +268,113 @@ export function ThreadTimelineSurface({
       ? activeThinking.id
       : (ongoingIndicatorLabel ?? "working");
   const timelineRowsWithPendingStop = useTimelineRowsWithPendingStop({
-    rows: timelineRows,
+    rows: unifiedRows,
     isStopping,
     stoppingAnchorAt,
     threadId,
   });
   const showLoadOlderRows =
-    hasOlderTimelineRows &&
-    onLoadOlderRows !== undefined &&
+    hasOlderRows &&
+    loadOlderRows !== undefined &&
     !isThreadTimelinePending &&
     !timelineError;
+  const showNativeHistoryError =
+    nativeHistory.olderError !== null ||
+    (nativeHistory.isError &&
+      (nativeHistory.messages.length > 0 ||
+        !isRunningThreadRuntimeDisplayStatus(threadRuntimeDisplayStatus)));
 
   return (
     <TimelineReasoningExpansionProvider key={threadId}>
       <ConversationTimeline className="flex-1">
-        {leadingContent}
-        {showLoadOlderRows ? (
-          <LoadOlderMessages
-            hasOlderTimelineRows={hasOlderTimelineRows}
-            isLoadingOlderTimelineRows={isLoadingOlderTimelineRows}
-            onLoadOlderRows={onLoadOlderRows}
-          />
-        ) : null}
-        {isThreadTimelinePending ? (
-          (loadingContent ?? <DelayedThreadLoadingIndicator />)
-        ) : timelineError ? (
-          <TimelineStatusIndicator
-            label="Failed to load timeline"
-            className={timelineErrorClassName}
-          />
-        ) : timelineRowsWithPendingStop.length > 0 ? (
-          <ThreadTimelineRows
-            canSpawnChild={canSpawnChild}
-            threadOriginKind={threadOriginKind}
-            onForkMessage={onForkMessage}
-            onEditMessage={onEditMessage}
-            inlineMessageEditor={inlineMessageEditor}
-            onMessageAddToChat={onMessageAddToChat}
-            onSendToMainMessage={onSendToMainMessage}
-            onSelectionAddToChat={onSelectionAddToChat}
-            consumerMessageActions={consumerMessageActions}
-            includePluginMessageActions={includePluginMessageActions}
-            onOpenLink={onOpenLink}
-            onOpenLocalFileLink={onOpenLocalFileLink}
-            onOpenPluginPanel={onOpenPluginPanel}
-            onTitleAction={onTitleAction}
-            projectId={projectId}
-            resolveMentionLink={resolveMentionLink}
-            resolveUserAttachmentImageSrc={toUserAttachmentImageSrc}
-            hasOlderTimelineRows={hasOlderTimelineRows}
-            isLoadingOlderTimelineRows={isLoadingOlderTimelineRows}
-            onLoadOlderRows={onLoadOlderRows}
-            timelineRows={timelineRowsWithPendingStop}
-            timelineNavigationTargetRowId={timelineNavigationTargetRowId}
-            timelineWindowingEnabled={timelineWindowingEnabled}
-            threadId={threadId}
-            threadRuntimeDisplayStatus={threadRuntimeDisplayStatus}
-            unreadDividerAutoScroll={unreadDividerAutoScroll}
-            unreadDividerPlacement={unreadDividerPlacement}
-            workspaceRootPath={workspaceRootPath}
-          />
-        ) : null}
-        {hostConnectionNotice ? (
-          <TimelineStatusIndicator
-            label={hostConnectionNotice.label}
-            className={
-              hostConnectionNotice.tone === "error"
-                ? "mt-4 text-destructive"
-                : "mt-4"
-            }
-          />
-        ) : null}
-        <HeightTransition visible={showOngoingIndicator}>
-          <TimelineWorkingIndicator
-            key={ongoingIndicatorKey}
-            details={activeThinkingDetails}
-            reasoningId={activeThinking?.id}
-            isThinking={showActiveThinking}
-            label={ongoingIndicatorLabel}
-          />
-        </HeightTransition>
+      {leadingContent}
+      {showNativeHistoryError ? (
+        <TimelineStatusIndicator
+          label={nativeHistory.messages.length > 0
+            ? "Не удалось обновить историю исходной сессии. Показаны ранее полученные сообщения."
+            : "История исходной сессии пока недоступна. Показаны сообщения bb."}
+          className="mb-3 text-destructive"
+        />
+      ) : null}
+      {hasNewMessages ? (
+        <div className="sticky top-2 z-10 flex justify-center">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              bottomAnchor?.scrollToBottom();
+              setHasNewMessages(false);
+            }}
+          >
+            Есть новые сообщения ↓
+          </Button>
+        </div>
+      ) : null}
+      {showLoadOlderRows ? (
+        <LoadOlderMessages
+          hasOlderTimelineRows={hasOlderRows}
+          isLoadingOlderTimelineRows={loadingOlderRows}
+          onLoadOlderRows={loadOlderRows}
+        />
+      ) : null}
+      {isThreadTimelinePending ? (
+        (loadingContent ?? <DelayedThreadLoadingIndicator />)
+      ) : timelineError ? (
+        <TimelineStatusIndicator
+          label="Failed to load timeline"
+          className={timelineErrorClassName}
+        />
+      ) : timelineRowsWithPendingStop.length > 0 ? (
+        <ThreadTimelineRows
+          canSpawnChild={canSpawnChild}
+          threadOriginKind={threadOriginKind}
+          onForkMessage={onForkMessage}
+          onEditMessage={onEditMessage}
+          inlineMessageEditor={inlineMessageEditor}
+          onMessageAddToChat={onMessageAddToChat}
+          onSendToMainMessage={onSendToMainMessage}
+          onSelectionAddToChat={onSelectionAddToChat}
+          consumerMessageActions={consumerMessageActions}
+          includePluginMessageActions={includePluginMessageActions}
+          onOpenLink={onOpenLink}
+          onOpenLocalFileLink={onOpenLocalFileLink}
+          onOpenPluginPanel={onOpenPluginPanel}
+          onTitleAction={onTitleAction}
+          projectId={projectId}
+          resolveMentionLink={resolveMentionLink}
+          resolveUserAttachmentImageSrc={resolveAttachmentImageSrc}
+          hasOlderTimelineRows={hasOlderRows}
+          isLoadingOlderTimelineRows={loadingOlderRows}
+          onLoadOlderRows={loadOlderRows}
+          timelineRows={timelineRowsWithPendingStop}
+          timelineNavigationTargetRowId={timelineNavigationTargetRowId}
+          timelineWindowingEnabled={timelineWindowingEnabled}
+          threadId={threadId}
+          threadRuntimeDisplayStatus={threadRuntimeDisplayStatus}
+          unreadDividerAutoScroll={unreadDividerAutoScroll}
+          unreadDividerPlacement={unreadDividerPlacement}
+          workspaceRootPath={workspaceRootPath}
+        />
+      ) : null}
+      {hostConnectionNotice ? (
+        <TimelineStatusIndicator
+          label={hostConnectionNotice.label}
+          className={
+            hostConnectionNotice.tone === "error"
+              ? "mt-4 text-destructive"
+              : "mt-4"
+          }
+        />
+      ) : null}
+      <HeightTransition visible={showOngoingIndicator}>
+        <TimelineWorkingIndicator
+          key={ongoingIndicatorKey}
+          details={activeThinkingDetails}
+          reasoningId={activeThinking?.id}
+          isThinking={showActiveThinking}
+          label={ongoingIndicatorLabel}
+        />
+      </HeightTransition>
       </ConversationTimeline>
     </TimelineReasoningExpansionProvider>
   );

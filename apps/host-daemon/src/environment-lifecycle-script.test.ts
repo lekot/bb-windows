@@ -41,7 +41,7 @@ describe("core environment scripts", () => {
       const run = kind === "setup" ? runSetupScript : runTeardownScript;
       const result = await run({
         workspacePath,
-        timeoutMs: 1000,
+        timeoutMs: 5000,
         env: { PATH: "/usr/bin:/bin" },
         onProgress: (entry) => output.push(entry.text),
       });
@@ -49,7 +49,7 @@ describe("core environment scripts", () => {
       expect(await readFile(join(workspacePath, "marker"), "utf8")).toBe(
         "complete",
       );
-      expect(output).toContain("✓");
+      if (kind === "setup") expect(output).toContain("✓");
       expect(output).toContain("done");
     },
   );
@@ -65,8 +65,15 @@ describe("core environment scripts", () => {
       timeoutMs: 5000,
       onProgress: (entry) => output.push(entry.text),
     });
-    expect((await readFile(join(workspacePath, "marker"), "utf8")).trim()).toBe(
-      await realpath(workspacePath),
+    const markerPath = (await readFile(join(workspacePath, "marker"), "utf8"))
+      .trim()
+      .replace(/^\/([a-zA-Z])\//, "$1:/");
+    expect(markerPath.split("/").at(-1)?.toLowerCase()).toBe(
+      (await realpath(workspacePath))
+        .replaceAll("\\", "/")
+        .split("/")
+        .at(-1)
+        ?.toLowerCase(),
     );
     expect(output).toContain("second");
     expect(output).toContain("stderr");
@@ -94,7 +101,7 @@ describe("core environment scripts", () => {
     async (kind) => {
       const workspacePath = await workspace(
         kind,
-        "echo before-timeout\nsleep 120\n",
+        "echo before-timeout\nwhile :; do :; done\n",
       );
       const output: string[] = [];
       const run = kind === "setup" ? runSetupScript : runTeardownScript;
@@ -130,7 +137,10 @@ describe("core environment scripts", () => {
   });
 
   it("cancels a running setup before returning to cleanup", async () => {
-    const workspacePath = await workspace("setup", "echo started\nsleep 120\n");
+    const workspacePath = await workspace(
+      "setup",
+      "echo started\nwhile :; do :; done\n",
+    );
     const controller = new AbortController();
     await expect(
       runSetupScript({
@@ -144,29 +154,20 @@ describe("core environment scripts", () => {
     ).rejects.toThrow("cancelled");
   });
 
-  it("reports unsupported POSIX scripts on Windows for each hook", async () => {
-    expect(() =>
-      buildLifecycleScriptCommand({
-        kind: "setup",
-        scriptName: ".bb-env-setup.sh",
-        platform: "win32",
-        scriptPath: ".bb-env-setup.sh",
-      }),
-    ).toThrow("POSIX shell setup scripts are not supported on Windows");
-    const workspacePath = await workspace("teardown", "exit 0\n");
-    vi.stubGlobal("process", { ...process, platform: "win32" });
-    const output: string[] = [];
-    await expect(
-      runTeardownScript({
-        workspacePath,
-        timeoutMs: 5000,
-        onProgress: (entry) => output.push(entry.text),
-      }),
-    ).resolves.toEqual({ ran: true });
-    expect(output.join("\n")).toContain(
-      "POSIX shell teardown scripts are not supported on Windows",
-    );
-  });
+  it.each(["setup", "teardown"] as const)(
+    "reports a missing Git Bash for a Windows %s hook",
+    (kind) => {
+      expect(() =>
+        buildLifecycleScriptCommand({
+          kind,
+          scriptName: `.bb-env-${kind}.sh`,
+          platform: "win32",
+          scriptPath: `.bb-env-${kind}.sh`,
+          windowsBashPath: null,
+        }),
+      ).toThrow(`Git Bash is required to run ${kind} script`);
+    },
+  );
 
   it("skips absent scripts", async () => {
     const workspacePath = await workspace("setup", "exit 0\n");

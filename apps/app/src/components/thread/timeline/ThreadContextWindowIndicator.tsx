@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@bb/shared-ui/popover";
 import type { ThreadContextWindowUsage } from "@bb/server-contract";
 import { useHoverPopover } from "../../ui/hooks/use-hover-popover.js";
@@ -7,6 +7,12 @@ import {
   calculateContextWindowUsagePercent,
   formatCompactTokenCount,
 } from "./thread-context-window-usage.js";
+
+export interface ThreadCompactActionState {
+  inFlight: boolean;
+  error: string | null;
+  disabledReason: string | null;
+}
 
 import {
   ContextWindowReveal,
@@ -20,16 +26,35 @@ interface ThreadContextWindowCardProps {
 }
 
 interface ThreadContextWindowIndicatorProps {
-  usage: ThreadContextWindowUsage;
+  usage: ThreadContextWindowUsage | null;
   defaultOpen?: boolean;
+  note?: string | null;
+  sourceLabel?: string | null;
+  tokenLabel?: string;
+  onRequestCompact?: () => void;
+  compactState?: ThreadCompactActionState | null;
 }
 
 const CONTEXT_WINDOW_POPOVER_CLOSE_DELAY_MS = 60;
+const CONTEXT_WINDOW_LONG_PRESS_MS = 500;
+const CONTEXT_WINDOW_LONG_PRESS_SLOP_PX = 10;
+const CONTEXT_WINDOW_PANEL_CLASS_NAME =
+  "w-80 rounded-md border bg-popover p-2 text-popover-foreground shadow-md max-md:w-full max-md:rounded-none max-md:border-0 max-md:bg-transparent max-md:px-4 max-md:pt-2 max-md:pb-[max(1rem,env(safe-area-inset-bottom))] max-md:shadow-none";
+
+function isKeyboardFocus(target: HTMLElement): boolean {
+  if (typeof target.matches !== "function") return true;
+  try {
+    return target.matches(":focus-visible");
+  } catch {
+    return true;
+  }
+}
+
 export function ThreadContextWindowCard({
   usage,
   className,
 }: ThreadContextWindowCardProps) {
-  const details = usage.snapshot?.categories.length
+  const details = usage?.snapshot?.categories.length
     ? usage.snapshot
     : undefined;
   const [detailsExpanded, setDetailsExpanded] = useState(false);
@@ -155,8 +180,13 @@ export function ThreadContextWindowCard({
 export function ThreadContextWindowIndicator({
   usage,
   defaultOpen,
+  note,
+  sourceLabel,
+  tokenLabel,
+  onRequestCompact,
+  compactState = null,
 }: ThreadContextWindowIndicatorProps) {
-  const details = usage.snapshot?.categories.length
+  const details = usage?.snapshot?.categories.length
     ? usage.snapshot
     : undefined;
   const {
@@ -170,72 +200,232 @@ export function ThreadContextWindowIndicator({
   });
   const open = defaultOpen || hoverOpen;
 
-  const usedPercent = calculateContextWindowUsagePercent(usage);
-  const visualPercent = Math.min(Math.max(usedPercent, 0), 100);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressClickRef = useRef(false);
+  const pointerOverTriggerRef = useRef(false);
 
-  const radius = 6.5;
-  const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference * (1 - visualPercent / 100);
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current !== null) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressOriginRef.current = null;
+  };
+
+  const usedPercent = usage ? calculateContextWindowUsagePercent(usage) : null;
+  const hasKnownWindow = usedPercent !== null;
+  const visualPercent = hasKnownWindow
+    ? Math.min(Math.max(usedPercent, 0), 100)
+    : 0;
 
   const toneClass =
-    usedPercent >= 90
+    hasKnownWindow && usedPercent >= 90
       ? "text-destructive"
-      : usedPercent >= 75
+      : hasKnownWindow && usedPercent >= 75
         ? "text-warning-text"
         : "text-muted-foreground";
 
-  const titleLabel = usage.estimated ? "Estimated context" : "Context window";
+  const indicatorSvg = (
+    <svg
+      viewBox="0 0 16 16"
+      className={cn("size-4", toneClass)}
+      aria-hidden="true"
+    >
+      <circle
+        cx="8"
+        cy="8"
+        r={6.5}
+        fill="none"
+        strokeWidth="2"
+        className="stroke-border-hairline"
+      />
+      {hasKnownWindow ? (
+        <circle
+          cx="8"
+          cy="8"
+          r={6.5}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={2 * Math.PI * 6.5}
+          strokeDashoffset={2 * Math.PI * 6.5 * (1 - visualPercent / 100)}
+          transform="rotate(-90 8 8)"
+        />
+      ) : (
+        <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+      )}
+    </svg>
+  );
+
+  const usedTokensLabel = usage
+    ? formatCompactTokenCount(usage.usedTokens)
+    : tokenLabel;
+  const cardTitleLabel = usage
+    ? usage.estimated
+      ? "Estimated context"
+      : "Context window"
+    : "Окно контекста";
+  const usedLabel = usage
+    ? `Занято ${usage.estimated ? "~" : ""}${usedPercent}% окна`
+    : "Размер окна контекста не подтверждён";
+  const compactEnabled =
+    onRequestCompact !== undefined &&
+    compactState !== null &&
+    !compactState.inFlight &&
+    compactState.disabledReason === null;
+  const compactTitle =
+    onRequestCompact === undefined
+      ? usedLabel
+      : compactState?.disabledReason !== null &&
+          compactState?.disabledReason !== undefined
+        ? `Сжатие контекста: ${compactState.disabledReason}`
+        : compactState?.inFlight
+          ? "Сжимаю контекст…"
+          : "Сжать контекст (клик). Подробности — наведение, фокус или долгое нажатие";
+
+  const ringButton =
+    onRequestCompact === undefined ? (
+      <button
+        type="button"
+        {...triggerHoverProps}
+        className="-m-1 inline-flex size-8 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={usedLabel}
+        title={usedLabel}
+      >
+        {indicatorSvg}
+      </button>
+    ) : (
+      <button
+        type="button"
+        aria-disabled={!compactEnabled}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          if (event.button !== 0) return;
+          suppressClickRef.current = false;
+          longPressOriginRef.current = { x: event.clientX, y: event.clientY };
+          longPressTimerRef.current = setTimeout(() => {
+            longPressTimerRef.current = null;
+            longPressOriginRef.current = null;
+            suppressClickRef.current = true;
+            handleOpenChange(true);
+          }, CONTEXT_WINDOW_LONG_PRESS_MS);
+        }}
+        onPointerMove={(event) => {
+          const origin = longPressOriginRef.current;
+          if (origin === null) return;
+          const distance = Math.hypot(
+            event.clientX - origin.x,
+            event.clientY - origin.y,
+          );
+          if (distance >= CONTEXT_WINDOW_LONG_PRESS_SLOP_PX) cancelLongPress();
+        }}
+        onPointerUp={cancelLongPress}
+        onPointerCancel={cancelLongPress}
+        onClick={(event) => {
+          event.stopPropagation();
+          cancelLongPress();
+          if (suppressClickRef.current) {
+            suppressClickRef.current = false;
+            return;
+          }
+          if (compactEnabled) onRequestCompact();
+        }}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Escape") {
+            event.preventDefault();
+            handleOpenChange(false);
+          }
+        }}
+        onFocus={(event) => {
+          triggerHoverProps.onFocus();
+          if (isKeyboardFocus(event.currentTarget)) handleOpenChange(true);
+        }}
+        onBlur={() => {
+          triggerHoverProps.onBlur();
+          if (!pointerOverTriggerRef.current) handleOpenChange(false);
+        }}
+        className="-m-1 inline-flex size-8 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-disabled:cursor-default"
+        aria-label={compactTitle}
+        title={compactTitle}
+      >
+        {indicatorSvg}
+      </button>
+    );
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          {...triggerHoverProps}
-          className="-m-1 inline-flex size-8 cursor-pointer items-center justify-center rounded-full transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={`Context window ${usedPercent}% used`}
-        >
-          <svg
-            viewBox="0 0 16 16"
-            className={cn("size-4", toneClass)}
-            aria-hidden="true"
+    <span className="inline-flex items-center gap-1">
+      <Popover open={open} onOpenChange={handleOpenChange}>
+        <PopoverTrigger asChild>
+          <span
+            className="inline-flex"
+            onPointerEnter={() => {
+              pointerOverTriggerRef.current = true;
+              triggerHoverProps.onPointerEnter();
+            }}
+            onPointerLeave={() => {
+              pointerOverTriggerRef.current = false;
+              triggerHoverProps.onPointerLeave();
+            }}
           >
-            <circle
-              cx="8"
-              cy="8"
-              r={radius}
-              fill="none"
-              strokeWidth="3"
-              className="stroke-border-hairline"
+            {ringButton}
+          </span>
+        </PopoverTrigger>
+        {usage ? (
+          <PopoverContent
+            side="top"
+            align="end"
+            sideOffset={8}
+            {...contentHoverProps}
+            mobileTitle={cardTitleLabel}
+            className="w-auto border-0 bg-transparent p-0 shadow-none max-md:p-0"
+          >
+            <ThreadContextWindowCard
+              usage={usage}
+              className="max-md:w-full max-md:rounded-none max-md:border-0 max-md:bg-transparent max-md:px-4 max-md:pt-2 max-md:pb-[max(1rem,env(safe-area-inset-bottom))] max-md:shadow-none"
             />
-            <circle
-              cx="8"
-              cy="8"
-              r={radius}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeDasharray={circumference}
-              strokeDashoffset={dashOffset}
-              transform="rotate(-90 8 8)"
-            />
-          </svg>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        side="top"
-        align="end"
-        sideOffset={8}
-        {...contentHoverProps}
-        mobileTitle={titleLabel}
-        className="w-auto border-0 bg-transparent p-0 shadow-none max-md:p-0"
-      >
-        <ThreadContextWindowCard
-          usage={usage}
-          className="max-md:w-full max-md:rounded-none max-md:border-0 max-md:bg-transparent max-md:px-4 max-md:pt-2 max-md:pb-[max(1rem,env(safe-area-inset-bottom))] max-md:shadow-none"
-        />
-      </PopoverContent>
-    </Popover>
+          </PopoverContent>
+        ) : (
+          <PopoverContent
+            side="top"
+            align="end"
+            sideOffset={8}
+            {...contentHoverProps}
+            mobileTitle={cardTitleLabel}
+            className={CONTEXT_WINDOW_PANEL_CLASS_NAME}
+          >
+            <div className="space-y-2 max-md:space-y-3">
+              {note ? (
+                <p className="text-xs text-muted-foreground">{note}</p>
+              ) : null}
+              {usedTokensLabel ? (
+                <p className="text-xs tabular-nums text-muted-foreground">
+                  {usedTokensLabel}
+                </p>
+              ) : null}
+            </div>
+          </PopoverContent>
+        )}
+      </Popover>
+      {compactState?.error ? (
+        <span
+          role="alert"
+          className="max-w-48 truncate text-xs text-destructive"
+          title={compactState.error}
+        >
+          {compactState.error}
+        </span>
+      ) : null}
+      {compactState?.inFlight ? (
+        <span className="text-xs text-muted-foreground">Сжимаю…</span>
+      ) : null}
+      {sourceLabel ? (
+        <span className="whitespace-nowrap text-xs leading-none text-muted-foreground tabular-nums">
+          замер {sourceLabel}
+        </span>
+      ) : null}
+    </span>
   );
 }

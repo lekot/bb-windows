@@ -5,7 +5,11 @@ import type { z } from "zod";
 import { ACP_PROTOCOL_VERSION, acpInitializeResultSchema } from "../wire.js";
 
 const STDERR_TAIL_MAX_CHUNKS = 40;
-const CLOSED_STDIN_ERROR_CODES = new Set(["EPIPE", "ERR_STREAM_DESTROYED"]);
+const CLOSED_STDIN_ERROR_CODES = new Set([
+  "EPIPE",
+  "EOF",
+  "ERR_STREAM_DESTROYED",
+]);
 
 export interface AcpAgentRequestResponder {
   result(value: unknown): void;
@@ -363,6 +367,18 @@ export function createAcpAgentConnection(
           `ACP agent "${options.command}" is not running`,
         ),
       );
+      if (process.platform === "win32") {
+        if (child.stdin && !child.stdin.destroyed) {
+          child.stdin.end();
+          const escalation = setTimeout(() => {
+            if (!exited) child.kill("SIGKILL");
+          }, 4_000);
+          escalation.unref?.();
+          return;
+        }
+        child.kill("SIGKILL");
+        return;
+      }
       child.kill("SIGTERM");
     },
   };

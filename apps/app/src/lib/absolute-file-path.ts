@@ -22,7 +22,7 @@ interface NormalizeAbsoluteFilePathArgs {
 }
 
 function trimTrailingSlash(path: string): string {
-  if (path === "/") {
+  if (path === "/" || /^[A-Za-z]:\/$/u.test(path)) {
     return path;
   }
   return path.replace(/\/+$/u, "");
@@ -33,16 +33,13 @@ function trimLeadingSlash(path: string): string {
 }
 
 function isAbsoluteFilePath(path: string): boolean {
-  return path.startsWith("/");
+  return (
+    (path.startsWith("/") && !path.startsWith("//")) ||
+    /^[A-Za-z]:[\\/]/u.test(path)
+  );
 }
 
-export function normalizeAbsoluteFilePath({
-  path,
-}: NormalizeAbsoluteFilePathArgs): string | null {
-  if (!isAbsoluteFilePath(path)) {
-    return null;
-  }
-
+function normalizePathSegments(path: string): string[] {
   const normalizedSegments: string[] = [];
   for (const segment of path.split("/")) {
     if (segment.length === 0 || segment === ".") {
@@ -56,7 +53,32 @@ export function normalizeAbsoluteFilePath({
     }
     normalizedSegments.push(segment);
   }
+  return normalizedSegments;
+}
 
+function isWindowsDrivePath(path: string): boolean {
+  return /^[A-Za-z]:\//u.test(path);
+}
+
+export function normalizeAbsoluteFilePath({
+  path,
+}: NormalizeAbsoluteFilePathArgs): string | null {
+  if (!isAbsoluteFilePath(path)) {
+    return null;
+  }
+
+  const windowsDriveMatch = /^([A-Za-z]):[\\/](.*)$/u.exec(path);
+  if (windowsDriveMatch) {
+    const drive = windowsDriveMatch[1].toUpperCase();
+    const normalizedSegments = normalizePathSegments(
+      windowsDriveMatch[2].replace(/\\/gu, "/"),
+    );
+    return normalizedSegments.length === 0
+      ? `${drive}:/`
+      : `${drive}:/${normalizedSegments.join("/")}`;
+  }
+
+  const normalizedSegments = normalizePathSegments(path);
   return normalizedSegments.length === 0
     ? "/"
     : `/${normalizedSegments.join("/")}`;
@@ -78,6 +100,19 @@ export function isAbsoluteFilePathWithinRoot({
     return normalizedCandidatePath.startsWith("/");
   }
 
+  if (isWindowsDrivePath(normalizedRootPath)) {
+    const normalizedCandidatePathFolded = normalizedCandidatePath.toLowerCase();
+    const normalizedRootPathFolded = normalizedRootPath.toLowerCase();
+    return (
+      normalizedCandidatePathFolded === normalizedRootPathFolded ||
+      normalizedCandidatePathFolded.startsWith(
+        normalizedRootPath.endsWith("/")
+          ? normalizedRootPathFolded
+          : `${normalizedRootPathFolded}/`,
+      )
+    );
+  }
+
   return (
     normalizedCandidatePath === normalizedRootPath ||
     normalizedCandidatePath.startsWith(`${normalizedRootPath}/`)
@@ -92,12 +127,17 @@ export function buildAbsoluteFilePath({
     return path;
   }
 
-  const normalizedRootPath = trimTrailingSlash(rootPath);
-  const relativePath = trimLeadingSlash(path);
+  const normalizedRootPath =
+    normalizeAbsoluteFilePath({ path: rootPath }) ?? trimTrailingSlash(rootPath);
+  const relativePath = isWindowsDrivePath(normalizedRootPath)
+    ? trimLeadingSlash(path).replace(/\\/gu, "/")
+    : trimLeadingSlash(path);
   if (normalizedRootPath === "/") {
     return `/${relativePath}`;
   }
-  return `${normalizedRootPath}/${relativePath}`;
+  return normalizedRootPath.endsWith("/")
+    ? `${normalizedRootPath}${relativePath}`
+    : `${normalizedRootPath}/${relativePath}`;
 }
 
 export function resolveAbsoluteFilePath({
@@ -105,7 +145,7 @@ export function resolveAbsoluteFilePath({
   rootPath,
 }: ResolveAbsoluteFilePathArgs): string | null {
   if (isAbsoluteFilePath(path)) {
-    return path;
+    return normalizeAbsoluteFilePath({ path });
   }
   if (!rootPath) {
     return null;
@@ -114,7 +154,17 @@ export function resolveAbsoluteFilePath({
 }
 
 export function getAbsoluteDirname({ path }: GetAbsoluteDirnameArgs): string {
-  const trimmed = trimTrailingSlash(path);
+  const normalizedPath = normalizeAbsoluteFilePath({ path }) ?? path;
+  const trimmed = trimTrailingSlash(normalizedPath);
+  if (/^[A-Za-z]:$/u.test(trimmed)) {
+    return `${trimmed}/`;
+  }
   const lastSlashIndex = trimmed.lastIndexOf("/");
-  return lastSlashIndex <= 0 ? "/" : trimmed.slice(0, lastSlashIndex);
+  if (lastSlashIndex <= 0) {
+    return "/";
+  }
+  if (lastSlashIndex === 2 && /^[A-Za-z]:/u.test(trimmed)) {
+    return trimmed.slice(0, 3);
+  }
+  return trimmed.slice(0, lastSlashIndex);
 }

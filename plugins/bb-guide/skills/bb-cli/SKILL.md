@@ -112,6 +112,26 @@ bb plugin list --json
 bb skill list --environment "$BB_ENVIRONMENT_ID" --json
 ```
 
+## Native provider sessions
+
+- Resume an original provider transcript with `bb thread spawn --provider
+  <provider> --resume-native-session <session-id>`. Claude Code also supports
+  `--claude-resume-session` and copying with `--claude-source-session`. Use the
+  original host, user, and workspace, and do not attach one native session to
+  multiple bb threads.
+- Adopt a native session already used by an idle legacy thread with `bb thread
+  update <thread-id> --adopt-native-session <session-id>`. Do not combine this
+  with model or reasoning changes.
+- Read native transcript history and context usage with `bb thread
+  native-history <thread-id>`. Page backward with the opaque `--before` cursor.
+- Read provider quota with `bb thread native-quota <thread-id>`. This is
+  read-only and separate from chat context usage.
+- Read a ZCode image with `bb thread native-image <thread-id> --message
+  <message-id> --attachment <attachment-id> --json`.
+- Check ZCode Desktop visibility with `bb thread desktop-sync <thread-id>`.
+  `bb thread desktop-register <thread-id>` is a read-only preflight;
+  `--apply` writes only after a verified backup and transactional validation.
+
 ## Completion
 
 Confirm the command result and any affected thread, environment, plugin, or

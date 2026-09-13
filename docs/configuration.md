@@ -1,5 +1,24 @@
 # Configuration
 
+## Windows source distribution
+
+`scripts/windows/bb.ps1` is the Windows source lifecycle entrypoint. It defaults
+to loopback server port 38886, daemon port 38887, and `%LOCALAPPDATA%/BBWindows`.
+`BB_WINDOWS_DATA_DIR` or `-DataDir` selects instance storage; use the same value
+for start, stop, status and update. `-ServerPort`/`-DaemonPort` select ports and
+`-Lan` explicitly enables an all-interface IPv4 server listener. It does not
+install TLS or firewall rules. `-EnvFile` loads a private Node environment file.
+The launcher owns `BB_DATA_DIR`, `BB_SERVER_BIND_HOST`, `NODE_ENV` and
+`BB_TELEMETRY`; these values are not overridden by the file.
+
+Windows DeepSeek Harness inherits `DEEPSEEK_API_KEY` from the running process.
+It resolves `dsh.cmd` from PATH or uses `BB_DEEPSEEK_HARNESS_EXECUTABLE` (an
+executable path). OpenCode supports `BB_OPENCODE_EXECUTABLE`. Restart the Windows
+instance after changing launch-time environment variables. See
+[Windows README](../README.windows.md) for installation, update and smoke checks.
+
+## Packaged app configuration
+
 The packaged `npx bb-app` flow stores persistent package settings under
 `~/.bb/config.json`, provider environment values under `~/.bb/env.json`, and
 client SSH target mappings under `~/.bb/client.json`.
@@ -87,7 +106,8 @@ running, the new values apply on the next start. If you edit either file by
 hand, run `npx bb-app config refresh` to apply the files to a running server.
 
 The live reload applies config keys such as `BB_APP_URL`, `BB_INFERENCE`,
-`BB_INFERENCE_FALLBACK`, and `BB_TRANSCRIPTION`, plus env values explicitly
+`BB_INFERENCE_FALLBACK`, `BB_TRANSCRIPTION`, `BB_LOCAL_WHISPER_URL`,
+`BB_LOCAL_WHISPER_LANGUAGE`, and the `BB_VOICE_CORRECTION_*` keys, plus env values explicitly
 consumed at runtime such as `OPENAI_API_KEY`. If one of those config keys is
 stored with `bb-app env` instead, it is startup-only; use `bb-app config` when
 you need a live change.
@@ -140,7 +160,12 @@ signal it, so a stale file left by a crash cannot stop an unrelated process.
 | `BB_APP_URL`            | `bb-app config`                                    | Optional for remote use | Human-facing app URL used for generated links and allowed browser origins. Leave empty for local-only use.                                                                                                                                                                                                                                                                                                     |
 | `BB_INFERENCE`          | `bb-app config`                                    | Optional                | Primary server-side helper model in `<service>/<model>` format, where `<service>` is an AI service a loaded plugin registers (`bb settings ai-services` lists them; `codex` comes with the codex plugin and uses the codex CLI's credentials with no reasoning) or a pi-ai provider the server calls directly with its API key. Defaults to `codex/gpt-5.6-luna`.                                              |
 | `BB_INFERENCE_FALLBACK` | `bb-app config`                                    | Optional                | Helper model used after a transient primary timeout, rate limit, or service-unavailable failure. Defaults to `codex/gpt-5.4-mini`.                                                                                                                                                                                                                                                                             |
-| `BB_TRANSCRIPTION`      | `bb-app config`                                    | Optional                | Voice transcription model in `<service>/<model>` format: a plugin-registered AI service (`codex` with the codex plugin; audio up to 5MB) or `openai/<model>` with `OPENAI_API_KEY`. Defaults to `codex/gpt-transcribe`.                                                                                                                                                                                        |
+| `BB_TRANSCRIPTION`      | `bb-app config`                                    | Optional                | Voice transcription model in `<service>/<model>` format: a plugin-registered AI service (`codex` with the codex plugin; audio up to 5MB), `openai/<model>` with `OPENAI_API_KEY`, or `local-whisper/<name>`. Defaults to `codex/gpt-transcribe`.                                                                                                                                                         |
+| `BB_LOCAL_WHISPER_URL` | `bb-app config` | Local transcription | Local Whisper endpoint used when `BB_TRANSCRIPTION` starts with `local-whisper/`. Defaults to `http://127.0.0.1:9003/asr`. |
+| `BB_LOCAL_WHISPER_LANGUAGE` | `bb-app config` | Local transcription | Language sent to the local Whisper endpoint. Defaults to `ru`. |
+| `BB_VOICE_CORRECTION_URL` | `bb-app config` | Optional | Full OpenAI-compatible chat-completions endpoint for asynchronous transcript correction. Empty disables correction. |
+| `BB_VOICE_CORRECTION_MODEL` | `bb-app config` | Optional | Correction model name. Defaults to `glm-5.3-flash`. |
+| `BB_VOICE_CORRECTION_API_KEY` | `bb-app config` | Optional secret | Bearer token for the correction endpoint. It is never returned to the app. |
 | `BB_MARKETPLACE_URL`    | `bb-app env`, or environment                       | Startup-only testing    | Manifest URL of the reserved `bb-community` plugin marketplace. It defaults to `https://getbb.app/marketplace/v2/marketplace.json`. If the default v2 request returns 404, the server requests v1. Set another URL to test catalog refreshes. The server requests that URL without fallback. It changes only `bb-community`. Add other marketplaces with `bb marketplace add`. Restart the app after a change. |
 | `BB_SERVER_URL`         | `bb-app config`                                    | Remote CLI/host use     | Server URL for standalone `bb` CLI and `host-daemon` commands on the current machine. The CLI defaults to `http://127.0.0.1:38886` when unset.                                                                                                                                                                                                                                                                 |
 | `BB_SERVER_BIND_HOST`   | `bb-app env`, environment, or `--server-bind-host` | Startup-only            | Server listener host. Defaults to `127.0.0.1`; accepts only `127.0.0.1` or `0.0.0.0`. A full launcher or desktop app restart is required; until then, a previous `0.0.0.0` listener remains exposed. This is not a `bb-app config` key.                                                                                                                                                                        |
@@ -354,6 +379,22 @@ It is for commands that need to target an already-running server, such as the
 bundled `bb` CLI or a standalone host daemon. The CLI can omit it when targeting
 the default local packaged server at `http://127.0.0.1:38886`; set it for remote
 or non-default servers.
+
+## Appearance
+
+The color palette (`bb theme`) and the typography profile (`bb typography`) are
+two orthogonal server-persisted appearance settings, applied live to every
+connected client and pre-painted from a local mirror on reload. Light/dark mode
+stays a per-client preference.
+
+Typography profiles — `standard`, `compact`, `readable`, `editorial`,
+`techno` — set the font families and density for UI text, headings, and code
+(JetBrains Mono and Golos Text ship with the app, with full Cyrillic coverage;
+no global font changes for the default profile). The text scale runs 90–110% in
+5% steps and never scales the 10px chrome micro-copy. Terminal and Monaco pick
+up font changes in open tabs without recreating them. The same controls are in
+Settings → Appearance, in the quick "Aa" sidebar menu, and in the Theme
+Preview panel's Typography lab.
 
 ## Client SSH Targets
 

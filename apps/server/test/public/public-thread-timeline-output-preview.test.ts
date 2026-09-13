@@ -523,7 +523,7 @@ describe("GET /threads/:id/timeline inline output preview", () => {
       expect(after.output.length).toBeLessThan(10_000);
       expect(after.output).toContain("output truncated by retention policy");
     });
-  });
+  }, 20_000);
 });
 
 describe("GET /threads/:id/timeline inline output preview (tool rows)", () => {

@@ -14,6 +14,7 @@
       "icon": "./icons/acp.svg",
       "experimental_icons": {
         "cursor": "./icons/cursor.svg",
+        "deepseek-harness": "./icons/deepseek-harness.svg",
         "opencode": "./icons/opencode.svg",
         "omp": "./icons/omp.svg",
         "grok": "./icons/grok.svg",
@@ -27,6 +28,7 @@
     "bb-plugin"
   ],
   "scripts": {
+    "build": "node --conditions=source --import tsx ../../apps/cli/src/index.ts plugin build .",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc --noEmit",
     "prepare:bundled": "bb-plugin-build prepare-bundled"

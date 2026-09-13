@@ -19,6 +19,7 @@ import type {
   WorkspaceProvisionType,
 } from "@bb/domain";
 import type { ProviderFork } from "@bb/domain/provider-fork";
+import type { NativeHistoryReaderKind } from "@bb/domain";
 import type {
   BbSdk,
   ThreadPluginMetadataArgs,
@@ -1203,7 +1204,18 @@ export interface PluginProviderCapabilities {
   /** The provider's coarse fallback reasoning ladder (see
    * {@link PluginProviderReasoningLevel}). Non-empty, no duplicates. */
   reasoningLevels: readonly PluginProviderReasoningLevel[];
+  /**
+   * Reader that maps this provider's persisted native transcript on the
+   * execution host into bb's read-only native-history projection. Absent
+   * means the provider has no host-readable native history. The reader name
+   * matches `NativeHistoryReader` from `@bb/host-daemon-contract`.
+   * Experimental: audit before stabilizing — see
+   * docs/api_to_audit.md.
+   */
+  experimental_nativeHistoryReader?: NativeHistoryReaderKind;
 }
+
+export type { NativeHistoryReaderKind as PluginProviderNativeHistoryReader };
 
 /**
  * Provider copy core surfaces render from per-provider tables today (usage

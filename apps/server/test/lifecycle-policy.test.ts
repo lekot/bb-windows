@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { getHost, updateHost } from "@bb/db";
 import type { HostDaemonOnlineRpcRequestMessage } from "@bb/host-daemon-contract";
 import { validatePluginMachineProviderDeclaration } from "@get-bb/plugin-sdk/internal/host-policy";
@@ -128,7 +129,12 @@ describe.sequential("suspended machine lifecycle policy", () => {
       expect(response.status).toBe(200);
       expect(await readJson(response)).toEqual({
         hostId: host.id,
-        storageRootPath: `/tmp/bb-host-data/${host.id}/thread-storage/${thread.id}`,
+        storageRootPath: join(
+          "/tmp/bb-host-data",
+          host.id,
+          "thread-storage",
+          thread.id,
+        ),
       });
       expect(machine.resume).not.toHaveBeenCalled();
       expect(rpc).not.toHaveBeenCalled();

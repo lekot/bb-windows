@@ -1137,6 +1137,12 @@ export function systemUsageLimitsQueryKey(
   return [SYSTEM_USAGE_LIMITS_QUERY_KEY, hostId, providerId];
 }
 
+export function allSystemUsageLimitsQueryKeyPrefix(): readonly [
+  typeof SYSTEM_USAGE_LIMITS_QUERY_KEY,
+] {
+  return [SYSTEM_USAGE_LIMITS_QUERY_KEY];
+}
+
 export function systemProviderStatesQueryKey(
   args: Pick<SystemExecutionOptionsQueryKeyArgs, "environmentId" | "hostId">,
 ): SystemProviderStatesQueryKey {

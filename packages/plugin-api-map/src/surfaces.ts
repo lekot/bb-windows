@@ -402,6 +402,7 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "Publish context snapshots through contextWindow deltas, with provider-defined category IDs and labels. Each category declares used, free, reserved, or deferred accounting; entries are included in its total and may be partial. Snapshots include capture time, session identity, model, totals, and an optional auto-compaction threshold",
           "Receive every message in a thread started with it, through a bridge process the plugin ships",
           "Contribute validated environment variables to any provider for each session and turn",
+          "Point bb at the provider's persisted native transcript so its threads show read-only native history in the unified timeline",
         ],
         apiSymbols: [
           "contextSnapshotSchema",
@@ -409,6 +410,8 @@ export const SURFACE_GROUPS: SurfaceGroup[] = [
           "ContextCategory",
           "ContextEntry",
           "PluginProviderDeclaration",
+          "PluginProviderCapabilities",
+          "PluginProviderNativeHistoryReader",
           "PluginProviderIconRegistration",
           "ExperimentalPluginProviderEnvContext",
           "ExperimentalPluginProviderEnvEntry",

@@ -27,6 +27,7 @@ import type {
   TerminalSession,
 } from "@bb/server-contract";
 import { useAppThemeEpoch } from "@/hooks/useAppTheme";
+import { useTypographyEpoch } from "@/hooks/useTypography";
 import { usePreferredTheme } from "@/hooks/useTheme";
 import type { MarkdownPreviewLinkHandler } from "@/components/ui/markdown-link";
 import { openUrlInExternalBrowser } from "@/lib/url-open-routing";
@@ -290,6 +291,50 @@ function buildTerminalTheme(): ITheme {
   const theme = buildTerminalThemeFromCssColors(get);
   probe.remove();
   return theme;
+}
+
+export function buildTerminalFontFamily(monoStack: string): string {
+  const stack = monoStack.trim();
+  return stack ? `${TERMINAL_FONT_FAMILY}, ${stack}` : TERMINAL_FONT_FAMILY;
+}
+
+export function parseTerminalFontSize(rawFontSize: string): number {
+  const parsed = Number.parseFloat(rawFontSize);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 12;
+}
+
+export interface TerminalFontConfig {
+  fontFamily: string;
+  fontSize: number;
+}
+
+export function readTerminalFontConfigFromDocument(
+  readFontSizePx: () => string,
+  readMonoStack: () => string,
+): TerminalFontConfig {
+  return {
+    fontFamily: buildTerminalFontFamily(readMonoStack()),
+    fontSize: parseTerminalFontSize(readFontSizePx()),
+  };
+}
+
+function readTerminalFontConfig(): TerminalFontConfig {
+  if (typeof document === "undefined") {
+    return { fontFamily: TERMINAL_FONT_FAMILY, fontSize: 12 };
+  }
+  const probe = document.createElement("span");
+  probe.className = "text-xs";
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  probe.style.pointerEvents = "none";
+  document.body.appendChild(probe);
+  const fontSizePx = getComputedStyle(probe).fontSize;
+  probe.remove();
+  return readTerminalFontConfigFromDocument(
+    () => fontSizePx,
+    () =>
+      getComputedStyle(document.documentElement).getPropertyValue("--font-mono"),
+  );
 }
 
 interface ThreadTerminalViewProps {
@@ -620,6 +665,7 @@ export function ThreadTerminalView({
   const scheduleFitRef = useRef<TerminalFitScheduler | null>(null);
   const preferredTheme = usePreferredTheme();
   const appThemeEpoch = useAppThemeEpoch();
+  const typographyEpoch = useTypographyEpoch();
   const appNavigation = useAppNavigationHost();
   const handleOpenLinkByPreference = useCallback<MarkdownPreviewLinkHandler>(
     ({ href }) => appNavigation.openUrl({ url: href }),
@@ -855,12 +901,13 @@ export function ThreadTerminalView({
         },
       });
 
+      const fontConfig = readTerminalFontConfig();
       terminal = new Terminal({
         allowProposedApi: TERMINAL_ALLOW_PROPOSED_API,
         convertEol: true,
         cursorBlink: true,
-        fontFamily: TERMINAL_FONT_FAMILY,
-        fontSize: 12,
+        fontFamily: fontConfig.fontFamily,
+        fontSize: fontConfig.fontSize,
         linkHandler: osc8LinkHandler,
         scrollback: 10_000,
         theme: buildTerminalTheme(),
@@ -1105,6 +1152,17 @@ export function ThreadTerminalView({
     }
     terminal.options.theme = buildTerminalTheme();
   }, [preferredTheme, appThemeEpoch]);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) {
+      return;
+    }
+    const { fontFamily, fontSize } = readTerminalFontConfig();
+    terminal.options.fontFamily = fontFamily;
+    terminal.options.fontSize = fontSize;
+    scheduleFitRef.current?.();
+  }, [typographyEpoch]);
 
   const contextMenuLink = contextMenuState.link;
   const contextMenuSelectionText = contextMenuState.selectionText;

@@ -10,6 +10,11 @@ import { registerOrganizationCommands } from "./organization.js";
 import { registerShowCommand } from "./show.js";
 import { registerSpawnCommand } from "./spawn.js";
 import { registerForkCommand } from "./fork.js";
+import { registerNativeHistoryCommand } from "./native-history.js";
+import { registerNativeQuotaCommand } from "./native-quota.js";
+import { registerNativeImageCommand } from "./native-image.js";
+import { registerDesktopSyncCommand } from "./desktop-sync.js";
+import { registerDesktopRegisterCommand } from "./desktop-register.js";
 import { registerWaitCommand } from "./wait.js";
 
 export function registerThreadCommands(
@@ -20,6 +25,11 @@ export function registerThreadCommands(
   registerWaitCommand(thread, getUrl);
   registerSpawnCommand(thread, getUrl);
   registerForkCommand(thread, getUrl);
+  registerNativeHistoryCommand(thread, getUrl);
+  registerNativeQuotaCommand(thread, getUrl);
+  registerNativeImageCommand(thread, getUrl);
+  registerDesktopSyncCommand(thread, getUrl);
+  registerDesktopRegisterCommand(thread, getUrl);
   registerListCommand(thread, getUrl);
   registerCountCommand(thread, getUrl);
   registerContextCommand(thread, getUrl);

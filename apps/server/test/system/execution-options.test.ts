@@ -186,7 +186,7 @@ describe("appendCustomModels", () => {
       models[0].supportedReasoningEfforts.map(
         (effort) => effort.reasoningEffort,
       ),
-    ).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    ).toEqual(["low", "high", "max"]);
   });
 
   it("falls back to the model id when displayName is omitted", () => {
@@ -359,7 +359,7 @@ describe("resolveSystemExecutionOptions", () => {
         expect.arrayContaining([
           expect.objectContaining({
             id: "acp-opencode",
-            displayName: "opencode",
+            displayName: "DeepSeek",
             available: true,
           }),
         ]),
@@ -369,7 +369,7 @@ describe("resolveSystemExecutionOptions", () => {
         responder.requests.filter(
           (request) => request.command.type === "provider.health",
         ),
-      ).toHaveLength(4);
+      ).toHaveLength(5);
       const modelRequest = responder.requests.find(
         (request) => request.command.type === "provider.list_models",
       );
@@ -379,7 +379,7 @@ describe("resolveSystemExecutionOptions", () => {
         bridgeLaunch: {
           providerOptions: {
             acpLaunchSpec: {
-              displayName: "opencode",
+              displayName: "DeepSeek",
               command: "opencode",
               args: ["acp"],
               env: {},
@@ -750,7 +750,7 @@ describe("resolveSystemExecutionOptions", () => {
             responder.requests.filter(
               (request) => request.command.type === "provider.health",
             ),
-          ).toHaveLength(failStatusRequest ? 0 : 4);
+          ).toHaveLength(failStatusRequest ? 0 : 5);
           expect(
             responder.requests.filter(
               (request) => request.command.type === "provider.list_models",
@@ -1255,7 +1255,7 @@ describe("resolveSystemExecutionOptions", () => {
           responder.requests.filter(
             (request) => request.command.type === "provider.health",
           ),
-        ).toHaveLength(4);
+        ).toHaveLength(5);
         const modelRequest = responder.requests.find(
           (request) => request.command.type === "provider.list_models",
         );
@@ -1379,7 +1379,7 @@ describe("resolveSystemExecutionOptions", () => {
         responder.requests.filter(
           (request) => request.command.type === "provider.health",
         ),
-      ).toHaveLength(4);
+      ).toHaveLength(5);
       const modelRequest = responder.requests.find(
         (request) => request.command.type === "provider.list_models",
       );

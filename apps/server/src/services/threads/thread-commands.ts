@@ -20,6 +20,7 @@ import {
 import type { AppDeps, LoggedWorkSessionDeps } from "../../types.js";
 import type { CommandResultSideEffectsDeps } from "../../internal/command-result-side-effects.js";
 import { ApiError } from "../../errors.js";
+import { readNativeSessionResumeIntent } from "./native-session-intent.js";
 import {
   LIVE_DAEMON_COMMAND_TIMEOUT_MS,
   startLiveHostCommand,
@@ -332,6 +333,10 @@ function buildPreparedTurnSubmitCommandPayload(
       providerId: args.runtimeContext.providerId,
       bridgeLaunch,
       providerThreadId: args.providerThreadId,
+      nativeSession: readNativeSessionResumeIntent(args.deps, {
+        providerThreadId: args.providerThreadId,
+        threadId: args.threadId,
+      }),
       instructions: args.runtimeContext.instructions,
       dynamicTools: args.runtimeContext.dynamicTools,
       contributedEnv: args.runtimeContext.contributedEnv,

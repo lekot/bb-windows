@@ -14,9 +14,11 @@ import {
   resetModelCatalogsAfterStreamerModeChange,
 } from "../cache-owners/system-cache-effects";
 import {
+  beginAppearanceCacheTransaction,
   beginKeyboardSettingsCacheTransaction,
   readCachedProviderOrder,
   readCachedStreamerMode,
+  rollbackAppearanceCacheTransaction,
   rollbackKeyboardSettingsCacheTransaction,
 } from "../cache-owners/system-config-cache-owner";
 
@@ -105,6 +107,14 @@ export function useUpdateAppearance() {
       errorMessage: "Failed to update appearance.",
     },
     mutationFn: (selection: AppThemeSelection) => sdk.theme.set(selection),
+    onMutate: (selection) =>
+      beginAppearanceCacheTransaction({ queryClient, selection }),
+    onError: (_error, _selection, context) => {
+      rollbackAppearanceCacheTransaction({
+        queryClient,
+        transaction: context,
+      });
+    },
     onSuccess: () => {
       invalidateSystemConfig({ queryClient });
     },

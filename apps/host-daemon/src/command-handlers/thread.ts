@@ -191,6 +191,9 @@ async function resumeThreadRuntimeIfMissing(
     dynamicTools: resumeContext.dynamicTools,
     disallowedTools: resumeContext.disallowedTools,
     instructionMode: resumeContext.instructionMode,
+    ...(resumeContext.nativeSession === null
+      ? {}
+      : { nativeSession: resumeContext.nativeSession }),
   });
 }
 

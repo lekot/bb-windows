@@ -31,6 +31,7 @@ export function makeSystemConfig(
     serverUrl: "http://localhost:38886",
     primaryHostId: null,
     primaryHostPlatform: null,
+    voiceCorrectionEnabled: false,
     voiceTranscriptionEnabled: false,
     aiServices: {
       inference: DEFAULTS.inferenceModel,

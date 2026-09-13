@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   CUSTOM_THEME_CSS_MAX_LENGTH,
   defaultAppTheme,
+  defaultFontScalePercent,
+  defaultTypographyProfile,
   resolveCodeTheme,
 } from "@bb/domain";
 import {
@@ -13,6 +15,11 @@ import {
   resolveAppTheme,
   resolveThemeRootPath,
 } from "../../src/services/system/custom-themes.js";
+
+const defaultTypography = {
+  typographyProfile: defaultTypographyProfile,
+  fontScalePercent: defaultFontScalePercent,
+};
 
 async function writeTheme(root: string, name: string, css: string) {
   await mkdir(join(root, name), { recursive: true });
@@ -46,7 +53,7 @@ describe("custom themes service", () => {
   });
 
   it("resolves a built-in id without reading disk", () => {
-    expect(resolveAppTheme(themeRoot, "nord", "blue")).toEqual({
+    expect(resolveAppTheme(themeRoot, "nord", "blue", defaultTypography)).toEqual({
       ...defaultAppTheme,
       themeId: "nord",
       faviconColor: "blue",
@@ -54,9 +61,26 @@ describe("custom themes service", () => {
     });
   });
 
+  it("threads the stored typography through every resolution branch", async () => {
+    const typography = {
+      typographyProfile: "editorial" as const,
+      fontScalePercent: 105 as const,
+    };
+    expect(resolveAppTheme(themeRoot, "nord", "blue", typography)).toMatchObject(
+      typography,
+    );
+    await writeTheme(themeRoot, "typo", ":root {}");
+    expect(
+      resolveAppTheme(themeRoot, "typo", "default", typography),
+    ).toMatchObject(typography);
+    expect(
+      resolveAppTheme(themeRoot, "missing", "default", typography),
+    ).toMatchObject(typography);
+  });
+
   it("resolves a custom theme's CSS from disk", async () => {
     await writeTheme(themeRoot, "ocean", ":root { --primary: #06f; }");
-    expect(resolveAppTheme(themeRoot, "ocean", "teal")).toEqual({
+    expect(resolveAppTheme(themeRoot, "ocean", "teal", defaultTypography)).toEqual({
       ...defaultAppTheme,
       themeId: "ocean",
       customCss: ":root { --primary: #06f; }",
@@ -65,11 +89,11 @@ describe("custom themes service", () => {
   });
 
   it("falls back to default palette but keeps the favicon tint for a missing or unsafe selection", () => {
-    expect(resolveAppTheme(themeRoot, "missing", "pink")).toEqual({
+    expect(resolveAppTheme(themeRoot, "missing", "pink", defaultTypography)).toEqual({
       ...defaultAppTheme,
       faviconColor: "pink",
     });
-    expect(resolveAppTheme(themeRoot, "../escape", "pink")).toEqual({
+    expect(resolveAppTheme(themeRoot, "../escape", "pink", defaultTypography)).toEqual({
       ...defaultAppTheme,
       faviconColor: "pink",
     });
@@ -82,7 +106,7 @@ describe("custom themes service", () => {
       "a".repeat(CUSTOM_THEME_CSS_MAX_LENGTH + 1),
     );
     expect(readCustomThemeCss(themeRoot, "huge")).toBeNull();
-    expect(resolveAppTheme(themeRoot, "huge", "default")).toEqual(
+    expect(resolveAppTheme(themeRoot, "huge", "default", defaultTypography)).toEqual(
       defaultAppTheme,
     );
   });
@@ -95,7 +119,7 @@ describe("custom themes service", () => {
       JSON.stringify(darkTheme),
       "utf8",
     );
-    expect(resolveAppTheme(themeRoot, "ocean", "default")).toEqual({
+    expect(resolveAppTheme(themeRoot, "ocean", "default", defaultTypography)).toEqual({
       ...defaultAppTheme,
       themeId: "ocean",
       customCss: ":root {}",

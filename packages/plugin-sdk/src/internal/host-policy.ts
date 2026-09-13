@@ -1334,6 +1334,9 @@ const READ_EXPERIMENTAL_PROVIDER_DECLARATION_FIELDS: ReadonlySet<string> =
     "experimental_resolvesNativeRoots",
   ]);
 
+const READ_EXPERIMENTAL_PROVIDER_CAPABILITY_FIELDS: ReadonlySet<string> =
+  new Set(["experimental_nativeHistoryReader"]);
+
 const RENAMED_PROVIDER_FIELDS_SDK_VERSION = "0.4.16";
 
 /**
@@ -1451,7 +1454,7 @@ export function validatePluginProviderDeclaration(
     providerId: id,
     value: capabilities,
     scope: "capabilities.",
-    read: new Set(),
+    read: READ_EXPERIMENTAL_PROVIDER_CAPABILITY_FIELDS,
     renamed: MOVED_PROVIDER_CAPABILITY_FIELDS,
     verb: "moved",
   });
@@ -1494,6 +1497,23 @@ export function validatePluginProviderDeclaration(
       `provider "${id}" capabilities.fork must be one of ${PROVIDER_FORK_VALUES.join(", ")}`,
     );
   }
+  const NATIVE_HISTORY_READER_VALUES = [
+    "claude-transcript",
+    "codex-rollout",
+    "zcode-sqlite",
+  ] as const;
+  const experimentalNativeHistoryReader =
+    capabilities.experimental_nativeHistoryReader;
+  if (
+    experimentalNativeHistoryReader !== undefined &&
+    !(NATIVE_HISTORY_READER_VALUES as readonly string[]).includes(
+      experimentalNativeHistoryReader,
+    )
+  ) {
+    throw new Error(
+      `provider "${id}" capabilities.experimental_nativeHistoryReader must be one of ${NATIVE_HISTORY_READER_VALUES.join(", ")}`,
+    );
+  }
   const normalizedCapabilities: PluginProviderCapabilities = Object.freeze({
     supportsServiceTier: capabilities.supportsServiceTier,
     supportsNativeUserQuestion: capabilities.supportsNativeUserQuestion,
@@ -1501,6 +1521,9 @@ export function validatePluginProviderDeclaration(
     supportsManualCompaction: capabilities.supportsManualCompaction,
     supportsThreadArchive: capabilities.supportsThreadArchive,
     supportsThreadRename: capabilities.supportsThreadRename,
+    ...(experimentalNativeHistoryReader === undefined
+      ? {}
+      : { experimental_nativeHistoryReader: experimentalNativeHistoryReader }),
     permissionModes: validateProviderLiteralArray({
       providerId: id,
       field: "capabilities.permissionModes",

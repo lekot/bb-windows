@@ -250,6 +250,7 @@ const NAV_PANEL_REGISTRATION_KEYS: ReadonlySet<string> = new Set(
     icon: true,
     path: true,
     component: true,
+    experimental_sidebarPlacement: true,
     fixedTabs: true,
     experimental_sidebarAccessory: true,
     headerContent: true,
@@ -606,6 +607,19 @@ export function collectPluginAppRegistrations(
           icon: requireNonEmptyString(kind, "icon", registration.icon),
           path,
           component: requireComponent(kind, registration.component),
+          ...(registration.experimental_sidebarPlacement === undefined
+            ? {}
+            : registration.experimental_sidebarPlacement === "navigation" ||
+                registration.experimental_sidebarPlacement === "footer"
+              ? {
+                  experimental_sidebarPlacement:
+                    registration.experimental_sidebarPlacement,
+                }
+              : (() => {
+                  throw new Error(
+                    `${kind}: "experimental_sidebarPlacement" must be "navigation" or "footer"`,
+                  );
+                })()),
           ...(fixedTabs.length > 0 ? { fixedTabs } : {}),
           ...(registration.experimental_sidebarAccessory !== undefined
             ? {

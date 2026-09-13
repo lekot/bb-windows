@@ -10,6 +10,7 @@ const systemConfigResponseSchema = z
   .object({
     dataDir: z.string().min(1).optional(),
     hostDaemonPort: z.number().int().min(1).max(65_535),
+    voiceCorrectionEnabled: z.boolean(),
     voiceTranscriptionEnabled: z.boolean(),
   })
   .passthrough();

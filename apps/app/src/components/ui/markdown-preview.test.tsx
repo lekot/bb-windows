@@ -92,6 +92,16 @@ function mockResizeObserverDeliveries(): {
 }
 
 describe("MarkdownPreview", () => {
+  it("keeps wide tables inside the message column with local scrolling", () => {
+    const { container } = render(<MarkdownPreview content={"| Command | Result |\n| --- | --- |\n| `very-long-command-without-breaks` | done |"} />);
+    const scroller = container.querySelector("table")?.parentElement;
+    const wrapper = scroller?.parentElement;
+    expect(wrapper?.style.width).toBe("100%");
+    expect(wrapper?.style.marginInline).toBe("0px");
+    expect(scroller?.classList.contains("overflow-x-auto")).toBe(true);
+    expect(scroller?.classList.contains("max-w-full")).toBe(true);
+  });
+
   it("shares one observer and observes content width only for table previews", () => {
     const { notifyResize, observed, observerCount } =
       mockResizeObserverDeliveries();

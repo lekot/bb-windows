@@ -229,6 +229,104 @@ describe("@bb/sdk", () => {
     ).resolves.toEqual(events);
   });
 
+  it("reads native Claude history through the thread-scoped route", async () => {
+    const history = {
+      supported: true,
+      revision: "1:2:3",
+      contextUsage: null,
+      nextCursor: null,
+      messages: [
+        {
+          id: "05aaff59-3729-424f-a6a1-6ce58cf2cff3",
+          role: "assistant" as const,
+          text: "Current summary",
+          timestamp: "2026-09-07T00:00:00.000Z",
+        },
+      ],
+      metadata: {
+        title: "Accounting review",
+        model: "claude-fable-5",
+        permissionMode: "acceptEdits",
+      },
+      truncated: false,
+    };
+    const queue = createFetchQueue([{ body: history }]);
+    const sdk = createBbSdk({
+      transport: createHttpTransport({
+        baseUrl: "http://bb.test",
+        fetch: queue.fetch,
+        runtime: "node",
+      }),
+    });
+
+    await expect(
+      sdk.threads.nativeHistory({
+        before: "opaque+cursor",
+        limit: 2,
+        threadId: "thr_m2g7j2arnh",
+      }),
+    ).resolves.toEqual(history);
+    expect(queue.requests).toEqual([
+      {
+        bodyText: undefined,
+        method: "GET",
+        url: "http://bb.test/api/v1/threads/thr_m2g7j2arnh/native-history?before=opaque%2Bcursor&limit=2",
+      },
+    ]);
+  });
+
+  it("forwards explicit native-session adoption without setting model or permissions", async () => {
+    const queue = createFetchQueue([{ body: { id: "thr_test" } }]);
+    const sdk = createBbSdk({
+      transport: createHttpTransport({
+        baseUrl: "http://bb.test",
+        fetch: queue.fetch,
+        runtime: "node",
+      }),
+    });
+    const sessionId = "01a07f45-4865-7be1-8c98-d56567822218";
+
+    await sdk.threads.update({
+      threadId: "thr_test",
+      adoptNativeSessionId: sessionId,
+    });
+
+    expect(queue.requests).toEqual([
+      {
+        method: "PATCH",
+        url: "http://bb.test/api/v1/threads/thr_test",
+        bodyText: JSON.stringify({ adoptNativeSessionId: sessionId }),
+      },
+    ]);
+  });
+
+  it("reads a native image with exact encoded message and attachment IDs", async () => {
+    const image = { mimeType: "image/png", base64: "aGVsbG8=" };
+    const queue = createFetchQueue([{ body: image }]);
+    const sdk = createBbSdk({
+      transport: createHttpTransport({
+        baseUrl: "http://bb.test",
+        fetch: queue.fetch,
+        runtime: "node",
+      }),
+    });
+
+    await expect(
+      sdk.threads.nativeImage({
+        threadId: "thr_test",
+        messageId: "message&1",
+        attachmentId: "part+1",
+      }),
+    ).resolves.toEqual(image);
+    expect(queue.requests).toEqual([
+      {
+        bodyText: undefined,
+        method: "GET",
+        url: "http://bb.test/api/v1/threads/thr_test/native-image?messageId=message%261&attachmentId=part%2B1",
+      },
+    ]);
+  });
+
   it("sends thread pane presentation actions through the typed transport", async () => {
     const queue = createFetchQueue([{ body: { delivered: 3 } }]);
     const sdk = createBbSdk({

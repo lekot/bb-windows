@@ -1,3 +1,4 @@
+import { isAbsolute, parse } from "node:path";
 import { assertEnvironmentPathAvailable } from "../environments/path-admission.js";
 import { z } from "zod";
 import {
@@ -88,17 +89,17 @@ function toolCallSuccess(text: string): ToolCallResponse {
 
 function normalizeDirectoryPath(path: string): string {
   const trimmed = path.trim();
-  if (trimmed === "/") {
+  if (parse(trimmed).root === trimmed) {
     return trimmed;
   }
-  return trimmed.replace(/\/+$/u, "");
+  return trimmed.replace(/[\\/]+$/u, "");
 }
 
 function validateDirectoryPath(path: string): string | null {
-  if (!path.startsWith("/")) {
+  if (!isAbsolute(path)) {
     return "Path must be an absolute path on the current host.";
   }
-  if (path === "/") {
+  if (parse(path).root === path) {
     return "Path must name a project directory, not the filesystem root.";
   }
   if (path.includes("\0")) {

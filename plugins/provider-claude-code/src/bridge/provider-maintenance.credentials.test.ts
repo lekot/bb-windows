@@ -114,11 +114,10 @@ describe("Claude Code credential loading", () => {
 
     expect(result).toEqual({
       supported: true,
-      usage: expect.objectContaining({
-        status: "error",
-        message:
-          "Anthropic temporarily throttled this usage check. This does not mean your Claude limit is exhausted. Try again later.",
-      }),
+        usage: expect.objectContaining({
+          status: "error",
+          message: "Claude usage is temporarily unavailable.",
+        }),
     });
   });
 });

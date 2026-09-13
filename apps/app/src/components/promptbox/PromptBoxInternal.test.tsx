@@ -2414,7 +2414,9 @@ describe("PromptBoxInternal compact layout", () => {
         const voiceButton = screen.getByRole("button", {
           name: "Start voice input",
         });
-        expect(screen.getByRole("button", { name: "Submit (Enter)" })).toBeTruthy();
+        expect(
+          screen.getByRole("button", { name: "Submit (Enter)" }),
+        ).toBeTruthy();
         fireEvent.pointerDown(voiceButton, {
           button: 0,
           pointerType: "touch",
@@ -4700,6 +4702,58 @@ describe("PromptBoxInternal command typeahead navigation", () => {
       name: "plan",
       source: "command",
     });
+  });
+});
+
+describe("voice correction snapshots", () => {
+  it("replaces only the inserted fragment while the live composer matches", async () => {
+    const promptBoxRef = createRef<PromptBoxHandle>();
+    const onChange = vi.fn();
+    render(
+      <PromptBoxInternal
+        {...createPromptBoxProps({
+          value: "word",
+          onChange,
+          promptBoxRef,
+        })}
+      />,
+    );
+    await waitFor(() => expect(promptBoxRef.current).not.toBeNull());
+
+    const snapshot = promptBoxRef.current!.insertTextAtCursor("nex wrds");
+    expect(snapshot).not.toBeNull();
+    expect(onChange).toHaveBeenLastCalledWith("word nex wrds", []);
+
+    const applied = promptBoxRef.current!.replaceInsertedText({
+      snapshot: snapshot!,
+      replacement: "corrected words",
+    });
+    expect(applied).toBe(true);
+    expect(onChange).toHaveBeenLastCalledWith("word corrected words", []);
+  });
+
+  it("refuses a late replacement after another edit", async () => {
+    const promptBoxRef = createRef<PromptBoxHandle>();
+    const onChange = vi.fn();
+    render(
+      <PromptBoxInternal
+        {...createPromptBoxProps({
+          value: "word",
+          onChange,
+          promptBoxRef,
+        })}
+      />,
+    );
+    await waitFor(() => expect(promptBoxRef.current).not.toBeNull());
+
+    const snapshot = promptBoxRef.current!.insertTextAtCursor("nex wrds");
+    promptBoxRef.current!.insertTextAtCursor("more text");
+    const applied = promptBoxRef.current!.replaceInsertedText({
+      snapshot: snapshot!,
+      replacement: "corrected words",
+    });
+    expect(applied).toBe(false);
+    expect(onChange).toHaveBeenLastCalledWith("word nex wrds more text", []);
   });
 });
 

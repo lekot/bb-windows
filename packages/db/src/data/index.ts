@@ -66,6 +66,8 @@ export {
   getThreadExecutionOverride,
   hasActiveThreadAttention,
   setThreadExecutionOverride,
+  getThreadNativeResume,
+  setThreadNativeResume,
   getThreadStartupContext,
   setThreadStartupContext,
   listHostThreadIds,
@@ -88,6 +90,7 @@ export {
   markThreadDeleted,
   unpinThread,
   unarchiveThread,
+  markThreadAttentionRequested,
   applyThreadLifecycleEvent,
   applyThreadLifecycleEventInTransaction,
   requireThreadLifecycleEventApplied,
@@ -207,9 +210,11 @@ export {
 } from "./plugin-state-snapshots.js";
 
 export {
+  getStoredAppearance,
   getStoredThemeId,
   getStoredFaviconColor,
   setStoredAppearance,
+  type StoredAppearance,
 } from "./app-theme.js";
 
 export {

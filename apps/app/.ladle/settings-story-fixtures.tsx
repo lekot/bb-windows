@@ -185,6 +185,7 @@ const sidebarNavigation = {
 const systemConfig = makeSystemConfig({
   primaryHostId: HOST_IDS.local,
   primaryHostPlatform: "darwin",
+  voiceCorrectionEnabled: false,
   voiceTranscriptionEnabled: true,
   dataDir: "/Users/michael/.bb",
 });

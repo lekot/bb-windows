@@ -533,6 +533,7 @@ export class RuntimeProviderProcessManager {
     if (hasChildProcessExited(args.providerProcess.child)) {
       return;
     }
+    args.providerProcess.child.stdin?.end();
 
     await stopProcessGroupLeaderFirst({
       child: args.providerProcess.child,
@@ -555,6 +556,9 @@ export class RuntimeProviderProcessManager {
       );
     }
     args.providerProcess.pending.clear();
+    void this.terminateProviderProcess({
+      providerProcess: args.providerProcess,
+    });
 
     this.args.onProcessExit?.({
       providerId: args.providerId,

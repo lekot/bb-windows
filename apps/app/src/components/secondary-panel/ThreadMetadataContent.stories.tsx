@@ -6,7 +6,7 @@ import {
   PanelStage,
   baseProps,
   makePullRequest,
-  makeThread,
+  makeThreadDetail,
 } from "./ThreadMetadataContent.fixtures";
 import { StoryCard, StoryRow } from "../../../.ladle/story-card";
 
@@ -38,7 +38,7 @@ export function Overview() {
         hint="thread.parentThreadId set — selector renders the link form"
       >
         {render({
-          thread: makeThread({ parentThreadId: "thr_codex_parent" }),
+          thread: makeThreadDetail({ parentThreadId: "thr_codex_parent" }),
           parentThreadProjectId: null,
           parentThreadDisplayName: "Codex Parent",
           canAssignToParent: false,
@@ -50,7 +50,7 @@ export function Overview() {
         hint="thread.archivedAt set — Archived row + unarchive button render"
       >
         {render({
-          thread: makeThread({ archivedAt: 1_700_000_000_000 }),
+          thread: makeThreadDetail({ archivedAt: 1_700_000_000_000 }),
         })}
       </StoryRow>
       <StoryRow
@@ -58,7 +58,7 @@ export function Overview() {
         hint="parent thread with no environment — environment/branch/merge-base hidden"
       >
         {render({
-          thread: makeThread({
+          thread: makeThreadDetail({
             title: "Codex Parent",
             titleFallback: "Codex Parent",
             environmentId: null,

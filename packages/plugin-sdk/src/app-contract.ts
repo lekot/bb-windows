@@ -543,6 +543,14 @@ export interface PluginNavPanelRegistration {
   path: string;
   component: ComponentType<PluginNavPanelProps>;
   /**
+   * Where the host exposes the panel shortcut. `footer` keeps the panel route
+   * and command-palette entry, but moves its sidebar button to the trailing
+   * edge of the sidebar footer instead of the main navigation list.
+   *
+   * Experimental: see docs/api_to_audit.md.
+   */
+  experimental_sidebarPlacement?: "navigation" | "footer";
+  /**
    * Ordered, non-closable tabs shown in this page's host-owned right panel.
    * BB owns selection and persistence and always includes its native Browser
    * and Terminal tools beside them. One tab is active in each visible split

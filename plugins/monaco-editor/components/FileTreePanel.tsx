@@ -3,6 +3,8 @@ import {
   ancestorsOf,
   buildTree,
   filterTree,
+  includeActiveFile,
+  normalizeRelativePath,
   type FlatEntry,
   type TreeNode,
 } from "../lib/file-tree.js";
@@ -21,7 +23,7 @@ export interface FileTreePanelProps {
   isLoading: boolean;
   error: string | null;
   truncated: boolean;
-  activePath: string;
+  activePath: string | null;
   background: string | null;
   onOpenFile: (path: string) => void;
   onClose: () => void;
@@ -118,25 +120,36 @@ export function FileTreePanel({
     });
   };
 
-  const tree = useMemo(() => buildTree(entries), [entries]);
+  const normalizedActivePath =
+    activePath === null ? "" : normalizeRelativePath(activePath);
+  const treeEntries = useMemo(
+    () => includeActiveFile(entries, normalizedActivePath || null, truncated),
+    [entries, normalizedActivePath, truncated],
+  );
+  const tree = useMemo(() => buildTree(treeEntries), [treeEntries]);
   const filtered = useMemo(() => filterTree(tree, query), [tree, query]);
-
-  useEffect(() => {
-    setExpanded((current) => {
-      const next = new Set(current);
-      for (const ancestor of ancestorsOf(activePath)) next.add(ancestor);
-      return next;
-    });
-  }, [activePath]);
-
-  useEffect(() => {
-    activeRowRef.current?.scrollIntoView({ block: "nearest" });
-  }, [activePath, entries.length]);
-
   const effectiveExpanded = useMemo(() => {
     if (filtered.expand.size === 0) return expanded;
     return new Set([...expanded, ...filtered.expand]);
   }, [expanded, filtered.expand]);
+
+  useEffect(() => {
+    if (normalizedActivePath === "") return;
+    setExpanded((current) => {
+      let changed = false;
+      const next = new Set(current);
+      for (const ancestor of ancestorsOf(normalizedActivePath)) {
+        if (next.has(ancestor)) continue;
+        next.add(ancestor);
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [normalizedActivePath]);
+
+  useEffect(() => {
+    activeRowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [effectiveExpanded, filtered.nodes, normalizedActivePath]);
 
   const toggle = (path: string) => {
     setExpanded((current) => {
@@ -212,7 +225,7 @@ export function FileTreePanel({
           </Message>
         ) : (
           <Rows
-            activePath={activePath}
+            activePath={normalizedActivePath}
             activeRowRef={activeRowRef}
             expanded={effectiveExpanded}
             level={0}

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { TYPOGRAPHY_PROFILE_IDS } from "@bb/domain";
 
 const css = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "theme.css"),
@@ -257,6 +258,124 @@ describe("theme.css Cadence text tokens", () => {
       );
     });
   }
+});
+
+describe("theme.css typography profiles", () => {
+  const OVERRIDE_PROFILE_IDS = TYPOGRAPHY_PROFILE_IDS.filter(
+    (id) => id !== "standard",
+  );
+  const profileRule = (id: string): string => {
+    const selector = `html[data-bb-typography="${id}"],
+.bb-typography-preview[data-profile="${id}"] {`;
+    const at = css.indexOf(selector);
+    if (at === -1) {
+      throw new Error(`no rule for typography profile ${id}`);
+    }
+    return css.slice(at, css.indexOf("}", at));
+  };
+
+  const PROFILE_DECLARATION_RE = /^\s*--([a-z-]+):\s*([^;]+);/gm;
+
+  it("declares both the live and preview arm for every non-default profile", () => {
+    for (const id of OVERRIDE_PROFILE_IDS) {
+      const rule = profileRule(id);
+      expect(rule).toContain(`html[data-bb-typography="${id}"]`);
+      expect(rule).toContain(`.bb-typography-preview[data-profile="${id}"]`);
+    }
+    expect(css).not.toContain('html[data-bb-typography="standard"]');
+  });
+
+  it("lets profiles touch only font and density tokens, never colors", () => {
+    const allowed = new Set([
+      "font-sans",
+      "font-heading",
+      "font-mono",
+      "bb-typography-size",
+    ]);
+    for (const id of OVERRIDE_PROFILE_IDS) {
+      const rule = profileRule(id);
+      expect(rule).not.toMatch(/oklch\(/);
+      expect(rule).not.toMatch(/color-mix\(/);
+      expect(rule).not.toMatch(/#[0-9a-fA-F]{3,8}/);
+      for (const declaration of rule.matchAll(PROFILE_DECLARATION_RE)) {
+        expect(allowed.has(declaration[1])).toBe(true);
+      }
+    }
+  });
+
+  it("keeps font stacks on generic fallbacks for Cyrillic-safe rendering", () => {
+    for (const id of OVERRIDE_PROFILE_IDS) {
+      const rule = profileRule(id);
+      for (const declaration of rule.matchAll(PROFILE_DECLARATION_RE)) {
+        if (!declaration[1].startsWith("font-")) continue;
+        expect(declaration[2]).toMatch(/,\s*(?:monospace|sans-serif)\s*$/);
+      }
+    }
+  });
+
+  it("defines the density and scale defaults in both mode blocks", () => {
+    for (const mode of MODES) {
+      const block = modeBlock(mode);
+      expect(variableValue(block, "bb-typography-size")).toBe("1");
+      expect(variableValue(block, "bb-font-scale")).toBe("1");
+      expect(variableValue(block, "font-heading")).toMatch(
+        /"Inter Variable", Inter, sans-serif/,
+      );
+    }
+  });
+
+  it("maps the heading font into Tailwind's theme and applies it to headings", () => {
+    expect(css).toMatch(/--font-heading:\s*var\(--font-heading\);/);
+    const headingSelectors = ["h1", "h2", "h3", "h4", "h5", "h6"];
+    const headingRule = `${headingSelectors.join(",\n  ")} {\n    font-family: var(--font-heading);`;
+    expect(css).toContain(headingRule);
+  });
+
+  it("scales every text tier except the chrome micro-copy", () => {
+    const themeBlock = css.slice(
+      css.indexOf("@theme {", css.indexOf("Typography scale overrides")),
+      css.indexOf("}", css.indexOf("@theme {", css.indexOf("Typography scale overrides"))),
+    );
+    for (const declaration of themeBlock.matchAll(/--(text-[a-z0-9]+(?:--line-height)?):\s*([^;]+);/g)) {
+      const token = declaration[1];
+      const value = declaration[2];
+      if (token === "text-2xs" || token === "text-2xs--line-height") {
+        expect(value).toBe(token === "text-2xs" ? "0.625rem" : "0.875rem");
+        expect(value).not.toContain("var(--bb-font-scale)");
+        continue;
+      }
+      expect(value).toContain("calc(");
+      expect(value).toContain("var(--bb-typography-size)");
+      expect(value).toContain("var(--bb-font-scale)");
+    }
+    const coarseAt = css.indexOf('@media (max-width: 767px) and (pointer: coarse)');
+    const coarseBlock = css.slice(coarseAt, css.indexOf("}", css.indexOf("--text-base--line-height", coarseAt)));
+    for (const declaration of coarseBlock.matchAll(/--(text-[a-z0-9]+(?:--line-height)?):\s*([^;]+);/g)) {
+      const token = declaration[1];
+      const value = declaration[2];
+      if (token.startsWith("text-2xs")) {
+        expect(value).not.toContain("var(--bb-font-scale)");
+        continue;
+      }
+      expect(value).toContain("var(--bb-typography-size)");
+      expect(value).toContain("var(--bb-font-scale)");
+    }
+  });
+
+  it("scales the sidebar row rhythm with the same factors", () => {
+    const rowHeight = css.match(/--bb-sidebar-row-height:\s*calc\(([^;]+)\);/);
+    if (!rowHeight) throw new Error("--bb-sidebar-row-height is not scaled");
+    expect(rowHeight[1]).toContain("var(--bb-typography-size)");
+    expect(rowHeight[1]).toContain("var(--bb-font-scale)");
+    const coarseRow = css.match(
+      /--bb-sidebar-row-height-coarse:\s*calc\(([^;]+)\);/,
+    );
+    if (!coarseRow) {
+      throw new Error("--bb-sidebar-row-height-coarse is not scaled");
+    }
+    expect(coarseRow[1]).toContain("var(--bb-typography-size)");
+    expect(coarseRow[1]).toContain("var(--bb-font-scale)");
+  });
 });
 
 describe("theme.css semantic update surfaces", () => {

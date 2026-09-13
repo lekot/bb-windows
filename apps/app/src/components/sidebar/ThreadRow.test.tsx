@@ -24,6 +24,10 @@ const mocks = vi.hoisted(() => ({
   renameThread: vi.fn(),
 }));
 
+vi.mock("@/hooks/queries/system-queries", () => ({
+  useSystemProviders: () => ({ data: [] }),
+}));
+
 vi.mock("@/components/thread/ThreadActionsProvider", () => ({
   useThreadActions: () => ({
     renameThread: mocks.renameThread,
@@ -405,6 +409,27 @@ describe("ThreadRow", () => {
     ).not.toBeNull();
     expect(screen.queryByLabelText("Thread has unsubmitted draft")).toBeNull();
     expect(screen.queryByLabelText("Unread thread succeeded")).toBeNull();
+  });
+
+  it("shows a provider badge before the title and keeps it navigable", () => {
+    renderThreadRow({
+      thread: createThread({ providerId: "unknown-provider" }),
+    });
+    const badge = screen.getByRole("img", { name: "unknown-provider" });
+    const title = screen.getByText("Thread");
+    const link = screen.getByRole("link", { name: "Open Thread" });
+    const onLinkClick = vi.fn();
+    link.addEventListener("click", onLinkClick);
+
+    expect(
+      badge.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(badge.getAttribute("title")).toBe("unknown-provider");
+    expect(badge.querySelector("svg, img")).not.toBeNull();
+
+    fireEvent.click(badge);
+
+    expect(onLinkClick).toHaveBeenCalledTimes(1);
   });
 
   it("replaces the draft icon with a plugin status and restores it when cleared", () => {

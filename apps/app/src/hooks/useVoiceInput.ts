@@ -12,6 +12,7 @@ import {
   readVoiceSupportEnvironment,
   resolveVoiceSupport,
   voiceUnsupportedMessage,
+  type VoiceCaptureMode,
   type VoiceUnsupportedReason,
 } from "./voice-input-support";
 
@@ -124,8 +125,10 @@ export function useVoiceInput(options: UseVoiceInputOptions) {
   const wakeLockSentinelRef = useRef<WakeLockSentinel | null>(null);
   const wakeLockRequestRef = useRef<Promise<void> | null>(null);
   const shouldHoldWakeLockRef = useRef(false);
+  const fileCaptureInputRef = useRef<HTMLInputElement | null>(null);
 
   const [state, setState] = useState<VoiceInputState>("idle");
+  const [captureMode, setCaptureMode] = useState<VoiceCaptureMode | null>(null);
   const [isSupported, setIsSupported] = useState(false);
   const [unsupportedReason, setUnsupportedReason] =
     useState<VoiceUnsupportedReason | null>("unsupported-browser");
@@ -206,6 +209,7 @@ export function useVoiceInput(options: UseVoiceInputOptions) {
 
   useEffect(() => {
     const support = resolveVoiceSupport(readVoiceSupportEnvironment());
+    setCaptureMode(support.captureMode);
     setIsSupported(support.isSupported);
     setUnsupportedReason(support.reason);
   }, []);
@@ -219,6 +223,8 @@ export function useVoiceInput(options: UseVoiceInputOptions) {
         } catch {}
       }
       mediaRecorderRef.current = null;
+      fileCaptureInputRef.current?.remove();
+      fileCaptureInputRef.current = null;
       chunksRef.current = [];
       startedAtMsRef.current = null;
       promptContextRef.current = undefined;
@@ -240,12 +246,87 @@ export function useVoiceInput(options: UseVoiceInputOptions) {
     });
   }, [requestRecordingWakeLock]);
 
+  const transcribeFile = useCallback(
+    async (file: File, promptContext?: string) => {
+      if (file.size === 0) {
+        showError("No audio was captured");
+        return;
+      }
+
+      setState("transcribing");
+      const abortController = new AbortController();
+      transcriptionAbortRef.current = abortController;
+      try {
+        const transcript = await options.onTranscribe({
+          file,
+          promptContext,
+          signal: abortController.signal,
+        });
+        const normalized = normalizeTranscript(transcript);
+        if (normalized.length === 0) {
+          throw new Error("Voice transcription returned an empty result.");
+        }
+        options.onTranscript(normalized);
+        setState("idle");
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          setState("idle");
+          return;
+        }
+        showError(resolveRecordingErrorMessage(error));
+      } finally {
+        if (transcriptionAbortRef.current === abortController) {
+          transcriptionAbortRef.current = null;
+        }
+      }
+    },
+    [options, showError],
+  );
+
+  const startFileCapture = useCallback(() => {
+    if (fileCaptureInputRef.current || typeof document === "undefined") {
+      return;
+    }
+
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "audio/*";
+    input.setAttribute("capture", "user");
+    input.hidden = true;
+    document.body.append(input);
+    fileCaptureInputRef.current = input;
+    const promptContext = options.getPromptContext?.();
+    const cleanupInput = () => {
+      if (fileCaptureInputRef.current === input) {
+        fileCaptureInputRef.current = null;
+      }
+      input.remove();
+    };
+    input.addEventListener(
+      "change",
+      () => {
+        const file = input.files?.[0];
+        cleanupInput();
+        if (file) {
+          void transcribeFile(file, promptContext);
+        }
+      },
+      { once: true },
+    );
+    input.addEventListener("cancel", cleanupInput, { once: true });
+    input.click();
+  }, [options, transcribeFile]);
+
   const start = useCallback(async () => {
     if (!isSupported) {
       showError(voiceUnsupportedMessage(unsupportedReason));
       return;
     }
     if (state === "recording" || state === "transcribing") {
+      return;
+    }
+    if (captureMode === "file-capture") {
+      startFileCapture();
       return;
     }
 
@@ -320,32 +401,7 @@ export function useVoiceInput(options: UseVoiceInputOptions) {
         const promptContext = promptContextRef.current;
         promptContextRef.current = undefined;
 
-        setState("transcribing");
-        const abortController = new AbortController();
-        transcriptionAbortRef.current = abortController;
-        try {
-          const transcript = await options.onTranscribe({
-            file: audioFile,
-            promptContext,
-            signal: abortController.signal,
-          });
-          const normalized = normalizeTranscript(transcript);
-          if (normalized.length === 0) {
-            throw new Error("Voice transcription returned an empty result.");
-          }
-          options.onTranscript(normalized);
-          setState("idle");
-        } catch (error) {
-          if (error instanceof DOMException && error.name === "AbortError") {
-            setState("idle");
-            return;
-          }
-          showError(resolveRecordingErrorMessage(error));
-        } finally {
-          if (transcriptionAbortRef.current === abortController) {
-            transcriptionAbortRef.current = null;
-          }
-        }
+        await transcribeFile(audioFile, promptContext);
       };
 
       recorder.start(CHUNK_TIMESLICE_MS);
@@ -366,6 +422,7 @@ export function useVoiceInput(options: UseVoiceInputOptions) {
       );
     }
   }, [
+    captureMode,
     isSupported,
     options,
     unsupportedReason,
@@ -373,8 +430,10 @@ export function useVoiceInput(options: UseVoiceInputOptions) {
     releaseRecordingWakeLock,
     requestRecordingWakeLock,
     showError,
+    startFileCapture,
     state,
     stopMediaStream,
+    transcribeFile,
   ]);
 
   const stop = useCallback(() => {

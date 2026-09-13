@@ -16,6 +16,7 @@ export const RESERVED_BB_CLI_COMMANDS: readonly string[] = [
   "terminal",
   "theme",
   "thread",
+  "typography",
   "updates",
   "voice",
 ];

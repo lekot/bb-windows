@@ -222,6 +222,25 @@ describe("runtime JSON-RPC transport", () => {
     }
   });
 
+  it("swallows the Windows broken-pipe write EOF from provider stdin", async () => {
+    const child = spawnEchoChild();
+    try {
+      const echoed = readChildStdoutLines(child, 1);
+      sendJsonRpcResult({ child, id: 1, result: { ok: true } });
+      await echoed;
+      child.stdin?.emit(
+        "error",
+        Object.assign(new Error("write EOF"), { code: "EOF" }),
+      );
+      await delay(0);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+      }
+      await waitForChildExit(child);
+    }
+  });
+
   it("serializes requests and validates their settled results", async () => {
     const child = spawnEchoChild();
     const linesPromise = readChildStdoutLines(child, 2);

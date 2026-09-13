@@ -269,6 +269,7 @@ import {
   resolveWorkspaceChangedFileOpenTarget,
   resolveThreadWorkspaceOpenPath,
 } from "./threadWorkspaceOpenPath";
+import type { GitDiffFilePreviewHandler } from "@/components/git-diff/git-diff-file-preview";
 import {
   resolveThreadLocalFileLink,
   type ThreadLocalFileLinkResolution,
@@ -342,7 +343,7 @@ type SecondaryPanelChangeHandler = (panel: ThreadSecondaryPanelTab) => void;
 type OpenInEditorHandler = NonNullable<
   ReturnType<typeof buildOpenInEditorHandler>
 >;
-type OpenFilePreviewHandler = (relativePath: string) => void;
+type OpenFilePreviewHandler = GitDiffFilePreviewHandler;
 
 interface SentMessageEditSession {
   draft: PromptDraftState;
@@ -2357,23 +2358,21 @@ function ThreadDetailViewInternal(props: ThreadRoutePathArgs) {
     ],
   );
   const handleOpenFilePreview = useCallback<OpenFilePreviewHandler>(
-    (relativePath) => {
+    ({ path, source, statusLabel }) => {
       if (
         thread?.environmentId === null ||
         thread?.environmentId === undefined
       ) {
         return;
       }
-      handleOpenLiveFilePreview({
-        target: {
-          kind: "workspace",
-          environmentId: thread.environmentId,
-          path: relativePath,
-        },
-        location: null,
+      openWorkspaceFile({
+        lineRange: null,
+        path,
+        source,
+        statusLabel,
       });
     },
-    [handleOpenLiveFilePreview, thread?.environmentId],
+    [openWorkspaceFile, thread?.environmentId],
   );
 
   if (threadQueryState.status === "loading") {

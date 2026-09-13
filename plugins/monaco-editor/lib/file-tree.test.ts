@@ -1,5 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { ancestorsOf, buildTree, filterTree } from "./file-tree.js";
+import {
+  ancestorsOf,
+  buildTree,
+  filterTree,
+  includeActiveFile,
+  normalizeRelativePath,
+} from "./file-tree.js";
+
+describe("normalizeRelativePath", () => {
+  it("normalizes Windows separators and dot prefixes", () => {
+    expect(normalizeRelativePath(".\\src\\ui\\button.ts\\")).toBe(
+      "src/ui/button.ts",
+    );
+  });
+});
+
+describe("includeActiveFile", () => {
+  it("adds only the already-open file when the listing is truncated", () => {
+    const entries = [{ path: "readme.md", kind: "file" as const }];
+
+    expect(
+      includeActiveFile(entries, "src\\.v8-testedapp.json", true),
+    ).toEqual([
+      ...entries,
+      { path: "src/.v8-testedapp.json", kind: "file" },
+    ]);
+  });
+
+  it("does not add an entry for a complete listing or a listed file", () => {
+    const entries = [{ path: "src/file.ts", kind: "file" as const }];
+
+    expect(includeActiveFile(entries, "src\\file.ts", false)).toBe(entries);
+    expect(includeActiveFile(entries, "src\\file.ts", true)).toBe(entries);
+  });
+});
 
 describe("buildTree", () => {
   it("nests flat paths and sorts directories before files", () => {

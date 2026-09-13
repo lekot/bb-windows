@@ -38,7 +38,7 @@ import {
   hostIdForEnvironmentIntent,
   type PendingThreadStartContext,
 } from "./dispatch-attempt.js";
-import { setThreadStartupContext } from "@bb/db";
+import { setThreadNativeResume, setThreadStartupContext } from "@bb/db";
 import { emitPluginThreadDeleted } from "../plugins/plugin-thread-events.js";
 import {
   createThreadRecord,
@@ -77,7 +77,7 @@ interface CreateProvisioningThreadArgs {
   executionDefaults: Parameters<
     typeof buildExecutionOptions
   >[2]["projectDefaults"];
-  fork: ThreadForkPoint | null;
+  fork: ThreadForkPoint | { descriptor: { sourceProviderThreadId: string }; historyEndSequence: null; sourceThreadId: null } | null;
   request: ThreadCreateServiceRequest;
   providerInput?: ThreadCreateServiceRequestInput["input"];
 }
@@ -363,6 +363,7 @@ async function createPendingThreadAndAttemptFirstDispatch(
     if (
       args.fork !== null &&
       args.fork.historyEndSequence !== null &&
+      args.fork.sourceThreadId !== null &&
       args.request.visibility === "visible"
     ) {
       copyForkSourceHistory(deps, {
@@ -401,6 +402,21 @@ async function createPendingThreadAndAttemptFirstDispatch(
       threadId: thread.id,
       startupContext: JSON.stringify({ kind: "pending", ...startContext }),
     });
+    const forkDescriptor = args.fork?.descriptor;
+    if (forkDescriptor !== undefined && "resumeOriginal" in forkDescriptor) {
+      setThreadNativeResume(deps.db, {
+        threadId: thread.id,
+        nativeResume: JSON.stringify({
+          providerThreadId: forkDescriptor.sourceProviderThreadId,
+          baselineExecution: {
+            model: execution.model,
+            permissionMode: execution.permissionMode,
+            reasoningLevel: execution.reasoningLevel,
+            serviceTier: execution.serviceTier,
+          },
+        }),
+      });
+    }
 
     await attemptDispatch(deps, {
       thread,
@@ -485,6 +501,18 @@ export async function createThreadFromRequest(
     forkSourceEnvironmentId?: string;
   } = {},
 ) {
+  if (rawRequestInput.claudeSourceSessionId !== undefined &&
+      (rawRequestInput.providerId !== "claude-code" || rawRequestInput.originKind != null || rawRequestInput.sourceThreadId !== undefined)) {
+    throw new ApiError(400, "invalid_request", "External session copying requires claude-code and no bb fork source");
+  }
+  if (rawRequestInput.claudeResumeSessionId !== undefined &&
+      (rawRequestInput.providerId !== "claude-code" || rawRequestInput.claudeSourceSessionId !== undefined || rawRequestInput.originKind != null || rawRequestInput.sourceThreadId !== undefined || rawRequestInput.sourceSeqEnd !== undefined || rawRequestInput.nativeResumeSessionId !== undefined)) {
+    throw new ApiError(400, "invalid_request", "Original session resume requires claude-code and no copy or fork source");
+  }
+  if (rawRequestInput.nativeResumeSessionId !== undefined &&
+      (rawRequestInput.claudeSourceSessionId !== undefined || rawRequestInput.claudeResumeSessionId !== undefined || rawRequestInput.originKind != null || rawRequestInput.sourceThreadId !== undefined || rawRequestInput.sourceSeqEnd !== undefined)) {
+    throw new ApiError(400, "invalid_request", "Native session resume cannot combine with copying or forking");
+  }
   const project = requirePublicProjectForThreadCreate(
     deps,
     rawRequestInput.projectId,
@@ -728,7 +756,13 @@ export async function createThreadFromRequest(
     environmentId,
     environmentIntent,
     executionDefaults: resolvedExecutionDefaults,
-    fork,
+    fork: request.claudeResumeSessionId !== undefined
+      ? { descriptor: { sourceProviderThreadId: request.claudeResumeSessionId, resumeOriginal: true as const }, historyEndSequence: null, sourceThreadId: null }
+      : request.nativeResumeSessionId !== undefined
+      ? { descriptor: { sourceProviderThreadId: request.nativeResumeSessionId, resumeOriginal: true as const }, historyEndSequence: null, sourceThreadId: null }
+      : request.claudeSourceSessionId !== undefined
+      ? { descriptor: { sourceProviderThreadId: request.claudeSourceSessionId }, historyEndSequence: null, sourceThreadId: null }
+      : fork,
     ...(options.providerInput !== undefined
       ? { providerInput: options.providerInput }
       : {}),

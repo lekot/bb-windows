@@ -7,6 +7,29 @@ import {
 } from "./delta-test-harness.js";
 
 describe("claude usage and fixture translation (delta path)", () => {
+  it("publishes request context before the final result", () => {
+    const harness = createClaudeDeltaHarness();
+    const events = harness.translate({
+      type: "assistant",
+      message: {
+        type: "message", role: "assistant", content: [],
+        usage: { input_tokens: 10, cache_read_input_tokens: 2000, cache_creation_input_tokens: 90, output_tokens: 400 },
+      },
+    });
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "thread/contextWindowUsage/updated",
+      contextWindowUsage: { usedTokens: 2100, modelContextWindow: null, estimated: true },
+    }));
+    expect(events.some(event => event.type === "turn/completed")).toBe(false);
+    const childEvents = harness.translate({
+      type: "assistant",
+      message: {
+        type: "message", role: "assistant", content: [],
+        usage: { input_tokens: 90000, output_tokens: 1 },
+      },
+    }, { parentToolCallId: "subagent-1" });
+    expect(childEvents.some(event => event.type === "thread/contextWindowUsage/updated")).toBe(false);
+  });
   it("fixture: assistant-text produces turn/started + item/completed agentMessage", () => {
     const harness = createClaudeDeltaHarness();
     const events = harness.translate(loadFixture("assistant-text.json"));

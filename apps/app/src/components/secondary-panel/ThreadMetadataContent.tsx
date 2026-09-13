@@ -19,6 +19,7 @@ import type {
   WorkspaceCommitSummary,
   WorkspaceStatus,
 } from "@bb/domain";
+import type { ThreadResponse } from "@bb/server-contract";
 import type { WorkspaceResolutionFailure } from "@bb/host-daemon-contract";
 import {
   formatEnvironmentDisplay,
@@ -337,6 +338,33 @@ export function EnvironmentRow({
   );
 }
 
+export function ProviderSessionRow({
+  providerSessionId,
+}: {
+  providerSessionId: string | null;
+}) {
+  if (!providerSessionId) return null;
+
+  return (
+    <DetailRow
+      label={
+        <DetailRowIconLabel icon="ComputerTerminal01">
+          Session
+        </DetailRowIconLabel>
+      }
+      valueClassName="min-w-0"
+    >
+      <CopyableInlineLabel
+        text={providerSessionId}
+        label="Copy session ID"
+        title={providerSessionId}
+        successMessage="Session ID copied"
+        errorMessage="Failed to copy session ID"
+      />
+    </DetailRow>
+  );
+}
+
 export function EnvironmentProvisioningFailureRow({
   failed,
 }: {
@@ -518,12 +546,13 @@ function shouldShowWorkspaceStatus({
   workspaceUnavailable,
 }: Pick<
   ThreadMetadataContentProps,
-  | "thread"
   | "environment"
   | "workspaceStatus"
   | "workspaceStatusError"
   | "workspaceUnavailable"
->): boolean {
+> & {
+  thread: Pick<ThreadMetadataContentProps["thread"], "archivedAt">;
+}): boolean {
   return (
     (Boolean(workspaceStatus) ||
       Boolean(workspaceStatusError) ||
@@ -871,7 +900,7 @@ export function ThreadStorageRow({
 }
 
 export interface ThreadMetadataContentProps {
-  thread: Thread;
+  thread: ThreadResponse;
   projectId: string;
   parentThreadProjectId: string | null;
   parentThreadDisplayName: string | null;
@@ -1052,6 +1081,7 @@ export function ThreadMetadataContent(props: ThreadMetadataContentProps) {
         environment={environment}
         environmentDisplayHost={environmentDisplayHost}
       />
+      <ProviderSessionRow providerSessionId={thread.providerSessionId} />
       <EnvironmentProvisioningFailureRow
         failed={environmentProvisioningFailure}
       />

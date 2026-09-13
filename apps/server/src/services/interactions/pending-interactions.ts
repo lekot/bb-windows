@@ -172,6 +172,7 @@ interface NotifyInteractionChangedArgs {
 
 interface InterruptPendingInteractionsForThreadsLifecycleArgs {
   providerId: string;
+  turnId?: string;
   reason: string;
   threadIds: readonly string[];
 }
@@ -751,6 +752,7 @@ export class PendingInteractionLifecycle {
     return this.settleInterruptedRows(
       interruptPendingInteractionsForThreads(this.deps.db, {
         providerId: args.providerId,
+        ...(args.turnId !== undefined ? { turnId: args.turnId } : {}),
         threadIds: args.threadIds,
         statusReason: args.reason,
       }),

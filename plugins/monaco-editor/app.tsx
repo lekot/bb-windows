@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   definePluginApp,
   experimental_useCodeTheme,
+  Markdown,
   useRpc,
   type PluginFileOpenerProps,
 } from "@get-bb/plugin-sdk/app";
@@ -33,6 +34,54 @@ type SaveState =
   | { kind: "error"; message: string }
   | { kind: "conflict" };
 
+export interface MonacoTypography {
+  fontFamily: string | undefined;
+  fontSize: number;
+  lineHeight: number;
+}
+
+const MONACO_PRIMARY_FONT = '"JetBrains Mono Variable", "JetBrains Mono"';
+
+export function buildMonacoTypography(
+  fontSizePx: string,
+  monoStack: string,
+): MonacoTypography {
+  const stack = monoStack.trim();
+  const fontSize = Math.max(
+    9,
+    Math.round(Number.parseFloat(fontSizePx) || 12),
+  );
+  return {
+    fontFamily:
+      stack.length > 0 ? `${MONACO_PRIMARY_FONT}, ${stack}` : MONACO_PRIMARY_FONT,
+    fontSize,
+    lineHeight: Math.round((fontSize * 5) / 3),
+  };
+}
+
+function readMonacoTypography(): MonacoTypography {
+  const probe = document.createElement("span");
+  probe.className = "text-xs";
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  probe.style.pointerEvents = "none";
+  document.body.appendChild(probe);
+  const fontSizePx = getComputedStyle(probe).fontSize;
+  probe.remove();
+  const monoStack = getComputedStyle(document.documentElement).getPropertyValue(
+    "--font-mono",
+  );
+  return buildMonacoTypography(fontSizePx, monoStack);
+}
+
+function isMarkdownPath(path: string): boolean {
+  const name = path.split("/").at(-1) ?? path;
+  const dotIndex = name.lastIndexOf(".");
+  if (dotIndex === -1) return false;
+  const extension = name.slice(dotIndex + 1).toLowerCase();
+  return extension === "md" || extension === "markdown";
+}
+
 function revealLineRange(
   editor: MonacoNs.editor.IStandaloneCodeEditor,
   lineRange: PluginFileOpenerProps["experimental_lineRange"],
@@ -54,7 +103,7 @@ function revealLineRange(
   editor.revealRangeInCenter(selection);
 }
 
-function MonacoFileOpener({
+export function MonacoFileOpener({
   path,
   source,
   Original,
@@ -72,6 +121,13 @@ function MonacoFileOpener({
 
   const [activePath, setActivePath] = useState(path);
   useEffect(() => setActivePath(path), [path]);
+  const isMarkdown = isMarkdownPath(activePath);
+  const [mdView, setMdView] = useState<"preview" | "source">("preview");
+  const [previewText, setPreviewText] = useState<string | null>(null);
+  const [activeTreeFile, setActiveTreeFile] = useState<{
+    sourcePath: string;
+    relativePath: string;
+  } | null>(null);
 
   const sha256Ref = useRef<string | null>(null);
   const saveStateRef = useRef<SaveState>({ kind: "clean" });
@@ -162,38 +218,41 @@ function MonacoFileOpener({
     }
   }, [activePath, rpc, setSaveState, source]);
 
-  const treeRequestedRef = useRef(false);
   useEffect(() => {
-    if (!isFilesOpen || treeRequestedRef.current) return;
-    treeRequestedRef.current = true;
+    if (!isFilesOpen) return;
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
     setTree((current) => ({ ...current, isLoading: true, error: null }));
-    void rpc
-      .call("tree", { source })
-      .then((result) => {
-        if (cancelled) return;
-        setTree({
-          entries: result.entries,
-          root: result.root,
-          truncated: result.truncated,
-          isLoading: false,
-          error: null,
+    const refresh = () => {
+      void rpc
+        .call("tree", { source })
+        .then((result) => {
+          if (cancelled) return;
+          setTree({
+            entries: result.entries,
+            root: result.root,
+            truncated: result.truncated,
+            isLoading: false,
+            error: null,
+          });
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          setTree((current) => ({
+            ...current,
+            isLoading: false,
+            error:
+              error instanceof Error ? error.message : "Could not list files",
+          }));
+        })
+        .finally(() => {
+          if (!cancelled) timer = setTimeout(refresh, 3000);
         });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        treeRequestedRef.current = false;
-        setTree({
-          entries: [],
-          root: "",
-          truncated: false,
-          isLoading: false,
-          error:
-            error instanceof Error ? error.message : "Could not list files",
-        });
-      });
+    };
+    refresh();
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [isFilesOpen, rpc, source]);
 
@@ -225,6 +284,8 @@ function MonacoFileOpener({
   useEffect(() => {
     let disposed = false;
     setStatus({ kind: "loading" });
+    setMdView("preview");
+    setPreviewText(null);
 
     void (async () => {
       try {
@@ -234,9 +295,14 @@ function MonacoFileOpener({
         ]);
         if (disposed) return;
         if (file.kind === "unsupported") {
+          setActiveTreeFile(null);
           setStatus({ kind: "delegate", reason: file.reason });
           return;
         }
+        setActiveTreeFile({
+          sourcePath: activePath,
+          relativePath: file.relativePath,
+        });
 
         const monaco = await loadMonaco(baseUrl);
         if (disposed) return;
@@ -245,8 +311,10 @@ function MonacoFileOpener({
         monacoRef.current = monaco;
 
         sha256Ref.current = file.sha256;
+        setPreviewText(file.content);
         const applied = applyCodeTheme(monaco, codeThemeRef.current);
         setOverflowWidgetsTheme(applied.base);
+        const typography = readMonacoTypography();
         const editor = monaco.editor.create(container, {
           value: file.content,
           language: languageForPath(activePath),
@@ -255,12 +323,9 @@ function MonacoFileOpener({
           theme: applied.name,
           minimap: { enabled: false },
           scrollBeyondLastLine: false,
-          fontSize: 12,
-          lineHeight: 20,
-          fontFamily:
-            getComputedStyle(document.documentElement).getPropertyValue(
-              "--font-mono",
-            ) || undefined,
+          fontSize: typography.fontSize,
+          lineHeight: typography.lineHeight,
+          fontFamily: typography.fontFamily,
           fixedOverflowWidgets: true,
           overflowWidgetsDomNode: overflowWidgetsNode(),
         });
@@ -275,9 +340,11 @@ function MonacoFileOpener({
         };
         markEditorActive(active);
         editor.onDidFocusEditorWidget(() => markEditorActive(active));
+        setSaveState({ kind: "clean" });
         setStatus({ kind: "ready" });
 
         editor.onDidChangeModelContent(() => {
+          setPreviewText(editor.getValue());
           if (saveStateRef.current.kind === "clean") {
             setSaveState({ kind: "dirty" });
           }
@@ -321,13 +388,31 @@ function MonacoFileOpener({
     setOverflowWidgetsTheme(applied.base);
   }, [codeTheme, status]);
 
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const editor = editorRef.current;
+      if (editor === null) return;
+      editor.updateOptions(readMonacoTypography());
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-bb-typography", "style"],
+    });
+    return () => observer.disconnect();
+  }, []);
+
   if (status.kind === "delegate") return <Original />;
+
+  const treeActivePath =
+    activeTreeFile?.sourcePath === activePath
+      ? activeTreeFile.relativePath
+      : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {isFilesOpen ? (
         <FileTreePanel
-          activePath={activePath}
+          activePath={treeActivePath}
           background={editorBackground(codeTheme.theme)}
           entries={tree.entries}
           error={tree.error}
@@ -345,6 +430,8 @@ function MonacoFileOpener({
         onRefresh={requestRefresh}
         isFilesOpen={isFilesOpen}
         onToggleFiles={() => setIsFilesOpen((open) => !open)}
+        mdView={isMarkdown ? mdView : undefined}
+        onMdViewChange={setMdView}
       />
       <Notice
         onDiscardCancel={() => setPendingDiscard(false)}
@@ -365,7 +452,25 @@ function MonacoFileOpener({
         saveState={saveState}
         status={status}
       />
-      <div ref={containerRef} className="min-h-0 flex-1" />
+      {isMarkdown && mdView === "preview" ? (
+        status.kind === "ready" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <Markdown
+              content={previewText ?? ""}
+              className="mx-auto max-w-3xl px-6 py-4"
+            />
+          </div>
+        ) : (
+          <p className="px-6 py-4 text-sm text-muted-foreground">Loading…</p>
+        )
+      ) : null}
+      <div
+        ref={containerRef}
+        className={cn(
+          "min-h-0 flex-1",
+          isMarkdown && mdView === "preview" && "hidden",
+        )}
+      />
     </div>
   );
 }

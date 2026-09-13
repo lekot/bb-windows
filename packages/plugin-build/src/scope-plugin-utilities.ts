@@ -25,6 +25,9 @@ export function scopePluginUtilities(css: string, scopeRoots: string): string {
       if (isUtilitiesLayer(statement.prelude)) {
         return `${statement.prelude}{${scopeStatements(statement.body, scope)}}`;
       }
+      if (isThemeLayer(statement.prelude)) {
+        return `${statement.prelude}{${scopeThemeStatements(statement.body, scope)}}`;
+      }
       assertNoUnscopedClassRule(statement);
       return `${statement.prelude}{${statement.body}}`;
     })
@@ -53,6 +56,36 @@ function assertNoUnscopedClassRule(statement: Statement): void {
 
 function isUtilitiesLayer(prelude: string): boolean {
   return /^@layer\s+utilities$/.test(prelude.trim());
+}
+
+function isThemeLayer(prelude: string): boolean {
+  return /^@layer\s+theme$/.test(prelude.trim());
+}
+
+function scopeThemeStatements(css: string, scope: string): string {
+  return splitStatements(css)
+    .map((statement) => {
+      if (statement.body === null) return statement.prelude;
+      const prelude = statement.prelude.trim();
+      if (prelude.startsWith("@")) {
+        const name = /^@([\w-]+)/.exec(prelude)?.[1]?.toLowerCase() ?? "";
+        const body = NESTED_STYLE_RULE_AT_RULES.has(name)
+          ? scopeThemeStatements(statement.body, scope)
+          : statement.body;
+        return `${statement.prelude}{${body}}`;
+      }
+      const sourceSelectors = splitSelectorList(prelude);
+      if (
+        sourceSelectors.some(
+          (selector) => selector !== ":root" && selector !== ":host",
+        )
+      ) {
+        assertNoUnscopedClassRule(statement);
+      }
+      const selectors = scope;
+      return `${selectors}{${statement.body}}`;
+    })
+    .join("");
 }
 
 function scopeStatements(css: string, scope: string): string {

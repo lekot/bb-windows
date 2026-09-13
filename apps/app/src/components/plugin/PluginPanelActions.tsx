@@ -17,6 +17,7 @@ import {
 } from "./file-opener-tabs";
 import { PluginSlotMount } from "./PluginSlotMount";
 import { PluginReplacementSlot } from "./PluginReplacementSlot";
+import type { PluginThreadPanelOpenHandler } from "./plugin-thread-panel-navigation";
 import { deprecatedOriginalAlias } from "@/lib/plugin-sdk-deprecated-aliases";
 import { resolveReplacement } from "@/lib/plugin-slot-resolvers";
 
@@ -187,6 +188,21 @@ export function usePluginNewThreadPanelActions({
       })),
     [newThreadPanelActions, openPluginPanel, projectId],
   );
+}
+
+export function createNewThreadPanelOpener(
+  entries: readonly PluginPanelActionEntry[],
+): PluginThreadPanelOpenHandler {
+  return (options) => {
+    const entry = entries.find(
+      (candidate) =>
+        candidate.id ===
+        `plugin-new-thread-action:${options.pluginId}:${options.actionId}`,
+    );
+    if (entry === undefined) return false;
+    entry.onSelect();
+    return true;
+  };
 }
 
 type PluginPanelSurfaceContext =

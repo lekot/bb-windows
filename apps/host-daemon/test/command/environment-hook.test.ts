@@ -15,7 +15,7 @@ it("streams hook output and cancels the process before the run RPC settles", asy
   const path = await makeTempDir("bb-hook-dispatch-");
   await writeFile(
     join(path, ".bb-env-setup.sh"),
-    "echo running-hook\nsleep 120\n",
+    "echo running-hook\nwhile :; do :; done\n",
   );
   const output: string[] = [];
   const options = harness.dispatchOptions({ dataDir: path });
@@ -123,7 +123,7 @@ it("reports unknown after daemon memory is lost without rerunning the script", a
   const path = await makeTempDir("bb-hook-daemon-restart-");
   await writeFile(
     join(path, ".bb-env-setup.sh"),
-    "echo started > started\nsleep 120\necho unsafe > completed\n",
+    "echo started > started\nwhile :; do :; done\necho unsafe > completed\n",
   );
   const firstOptions = createHarness().dispatchOptions({ dataDir: path });
   const command = {
@@ -278,5 +278,7 @@ it("applies hook NODE_ENV and PATH contributions after sanitizing inherited stat
     options,
   );
   expect(output).toContain("NODE_ENV=production");
-  expect(output).toContain("PATH=/review-toolchain:/usr/bin:/bin");
+  const pathOutput = output.find((entry) => entry.startsWith("PATH="));
+  expect(pathOutput).toContain("review-toolchain");
+  expect(pathOutput).toContain("usr/bin");
 });

@@ -4,12 +4,13 @@ import type { EnvironmentDisplayHostContext } from "@bb/core-ui";
 import {
   makeEnvironment,
   makeThread,
+  makeThreadDetail,
   makeThreadListEntry,
   makeWorkspaceStatus,
 } from "../../../.ladle/story-fixtures";
 import type { ThreadMetadataContentProps } from "./ThreadMetadataContent";
 
-export { makeEnvironment, makeThread, makeWorkspaceStatus };
+export { makeEnvironment, makeThread, makeThreadDetail, makeWorkspaceStatus };
 
 const noop = () => {};
 
@@ -72,7 +73,7 @@ export function makePullRequest(
 }
 
 export const baseProps: ThreadMetadataContentProps = {
-  thread: makeThread(),
+  thread: makeThreadDetail(),
   projectId: "proj_bb",
   parentThreadProjectId: null,
   parentThreadDisplayName: null,

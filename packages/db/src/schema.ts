@@ -18,6 +18,7 @@ import type {
   JsonValue,
   EnvironmentStatus,
   FaviconColorPreference,
+  FontScalePercent,
   PendingInteractionStatus,
   PermissionMode,
   PromptHistoryScope,
@@ -29,6 +30,7 @@ import type {
   TerminalSessionCloseReason,
   TerminalSessionStatus,
   ThreadDynamicContextFileStatus,
+  TypographyProfileId,
   ThreadSearchSourceKind,
   ThreadEventItemType,
   ThreadEventScopeKind,
@@ -438,6 +440,14 @@ export const appTheme = sqliteTable("app_theme", {
     .$type<FaviconColorPreference>()
     .notNull()
     .default("default"),
+  typographyProfile: text("typography_profile")
+    .$type<TypographyProfileId>()
+    .notNull()
+    .default("standard"),
+  fontScalePercent: integer("font_scale_percent")
+    .$type<FontScalePercent>()
+    .notNull()
+    .default(100),
   updatedAt: integer("updated_at").notNull(),
 });
 
@@ -568,6 +578,7 @@ export const threads = sqliteTable(
       .notNull()
       .default("starting"),
     startupContext: text("startup_context"),
+    nativeResume: text("native_resume"),
     parentThreadId: text("parent_thread_id").references(
       (): AnySQLiteColumn => threads.id,
       { onDelete: "set null" },
@@ -589,6 +600,7 @@ export const threads = sqliteTable(
     deletedAt: integer("deleted_at"),
     lastReadAt: integer("last_read_at"),
     latestAttentionAt: integer("latest_attention_at").notNull(),
+    nativeTailFingerprint: text("native_tail_fingerprint"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },

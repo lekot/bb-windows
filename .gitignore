@@ -91,6 +91,10 @@ provider-recordings/raw/
 **/provider-corpus/**
 !apps/server/test/provider-corpus/**
 !scripts/provider-corpus/**
+/.runtime/
+/windows-*.log
+
+/plugins/*/types/bb-plugin-sdk*.d.ts
 .builtin-server-test-*/
 .builtin-host-test-*/
 

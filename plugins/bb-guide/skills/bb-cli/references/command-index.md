@@ -124,6 +124,11 @@ configures the machine with optional configured `preset` and `image` names;
 - `bb thread wait`
 - `bb thread spawn`
 - `bb thread fork`
+- `bb thread desktop-register`
+- `bb thread desktop-sync`
+- `bb thread native-history`
+- `bb thread native-image`
+- `bb thread native-quota`
 - `bb thread list`
 - `bb thread show`
 - `bb thread log`
@@ -222,6 +227,14 @@ configures the machine with optional configured `preset` and `image` names;
 - `bb theme show`
 - `bb theme reset`
 
+## typography
+
+- `bb typography`
+- `bb typography list`
+- `bb typography set`
+- `bb typography scale`
+- `bb typography reset`
+
 ## plugin
 
 - `bb plugin`
@@ -275,6 +288,7 @@ configures the machine with optional configured `preset` and `image` names;
 ## voice
 
 - `bb voice`
+- `bb voice correct`
 - `bb voice transcribe`
 
 ## browser

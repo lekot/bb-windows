@@ -3,6 +3,7 @@ import type {
   AvailableModel,
   ExtensionKind,
   JsonValue,
+  NativeHistoryReaderKind,
   PermissionMode,
   ProviderFork,
   ProviderInfo,
@@ -75,6 +76,7 @@ export interface ProviderRegistryService {
   supportsFork(providerId: string): boolean;
   supportsSessionRewind(providerId: string): boolean;
   supportsManualCompaction(providerId: string): boolean;
+  nativeHistoryReader(providerId: string): NativeHistoryReaderKind | null;
   getExtensionKindSchemas(
     kind: ExtensionKind,
   ): PluginProviderExtensionKindDeclaration | null;
@@ -290,6 +292,14 @@ export function createProviderRegistryService(
         getRegistration(providerId)?.serverCapabilities
           .supportsManualCompaction ?? false
       );
+    },
+
+    nativeHistoryReader(providerId) {
+      const registration = getRegistration(providerId);
+      if (registration) {
+        return registration.info.capabilities.nativeHistoryReader ?? null;
+      }
+      return null;
     },
 
     getExtensionKindSchemas(kind) {

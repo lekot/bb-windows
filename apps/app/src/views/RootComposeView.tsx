@@ -62,7 +62,8 @@ import { usePointerCoarse } from "@bb/shared-ui/hooks/use-pointer-coarse";
 import { COARSE_POINTER_COMPACT_ICON_SIZE_CLASS } from "@bb/shared-ui/coarse-pointer-sizing";
 import { PluginIcon } from "@/components/plugin/PluginIcon";
 import type { FileOpenerOverride } from "@/lib/plugin-slot-resolvers";
-import { usePluginNewThreadPanelActions } from "@/components/plugin/PluginPanelActions";
+import { usePluginNewThreadPanelActions, createNewThreadPanelOpener } from "@/components/plugin/PluginPanelActions";
+import { usePublishThreadPanelOpener } from "@/components/plugin/plugin-thread-panel-navigation";
 import { usePluginSlots } from "@/lib/plugin-slots";
 import { useCreateThread } from "@/hooks/mutations/thread-runtime-mutations";
 import {
@@ -1076,6 +1077,11 @@ function RootComposeSurface({
     openPluginPanel,
     projectId: isProjectless ? null : projectId,
   });
+  const rootPluginPanelOpener = useMemo(
+    () => createNewThreadPanelOpener(rootPluginPanelActions),
+    [rootPluginPanelActions],
+  );
+  usePublishThreadPanelOpener(rootPluginPanelOpener, true);
   const syncedOrderedSecondaryFileTabs = useMemo(
     () =>
       loadedTerminalSessions === undefined
@@ -1769,13 +1775,13 @@ function RootComposeSurface({
     ),
     [],
   );
-  const handleOpenFilePreview = useCallback(
-    (relativePath: string) => {
+  const handleOpenFilePreview = useCallback<import("@/components/git-diff/git-diff-file-preview").GitDiffFilePreviewHandler>(
+    ({ path, source, statusLabel }) => {
       openWorkspaceFile({
         lineRange: null,
-        path: relativePath,
-        source: { kind: "working-tree" },
-        statusLabel: null,
+        path,
+        source,
+        statusLabel,
       });
     },
     [openWorkspaceFile],

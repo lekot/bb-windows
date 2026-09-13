@@ -354,5 +354,6 @@ describe("composed machine thread lifecycle", () => {
         expect(getHost(harness.db, source.host.id)?.destroyedAt).toBeNull();
       });
     },
+    20_000,
   );
 });

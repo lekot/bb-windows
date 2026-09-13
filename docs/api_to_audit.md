@@ -2582,6 +2582,36 @@ too, after the host has restored the draft. Sole consumer:
    Confirm that forwarding expectation is documented well enough, or make the
    composer refuse to schedule when it is plugin-hosted.
 
+## `bb.providers.register capabilities.experimental_nativeHistoryReader`
+
+**What it does.** Declares that a provider's persisted native transcript is
+readable on the execution host, and names the reader shape that maps it into
+bb's read-only native-history projection (`"claude-transcript"`,
+`"codex-rollout"`, or `"zcode-sqlite"`). The value flows from the plugin
+declaration through `PluginProviderCapabilities` into the server's provider
+registry (`nativeHistoryReader(providerId)`), the thread
+`/native-history` route, and the client provider catalog, where the app gates
+the unified native-history timeline without provider-id branches. The reader
+name matches `NativeHistoryReaderKind` in `@bb/domain`; the re-exported type
+is `PluginProviderNativeHistoryReader`.
+
+**Audit before stabilizing.**
+
+1. Confirm the reader-name set is the right granularity: it names a storage
+   format, not a provider, so a future format change (Codex rollout schema
+   bump, ZCode db schema migration) means a new reader value and a daemon
+   update; decide whether a per-reader version belongs in the declaration.
+2. Confirm the projection contract (`metadata.permissionMode` returned as a bb
+   permission mode when recognized, raw native string otherwise) is the
+   stabilization point plugins should rely on, or whether the raw native mode
+   should always be returned alongside.
+3. Confirm the `zcode-sqlite` reader belongs on the ACP custom-agent slug map
+   (`NATIVE_HISTORY_READERS_BY_SLUG`) rather than a settings field, so no
+   user configuration is required; revisit if a second ZCode-shaped agent
+   appears.
+4. Confirm the experimental `experimental_nativeHistoryReader` name and the
+   stable-named `PluginProviderNativeHistoryReader` type split is acceptable,
+   or rename the type with the prefix when stabilizing.
 ## Desktop browser control
 
 `bb.sdk.experimental_desktopBrowsers` and the exported `ExperimentalDesktopBrowsersArea`, `ExperimentalDesktopBrowserScope`, `ExperimentalDesktopBrowserLease`, `ExperimentalDesktopBrowserCreateInput`, and `ExperimentalDesktopBrowserAcquireInput` expose explicit host/window/thread discovery, isolated tab creation, expiring control leases, scoped CDP connections, capture, reveal, close, release, disposable tab-state subscriptions, and cookie import from an installed browser through `listImportSources` and `importCookies` (`ExperimentalDesktopBrowserInstanceRequest`, `ExperimentalDesktopBrowserImportCookiesInput`, `ExperimentalDesktopBrowserImportSources`, `ExperimentalDesktopBrowserImportOutcome`). The matching core CLI is `bb browser`.
@@ -2605,7 +2635,8 @@ and portable output handling for host-local plugin commands on every supported O
 - `PluginEnvironmentProviderCreateContext.experimental_claimPath(path)`: durable,
   asynchronous atomic host/path reservation on the launch row before provider
   mutation; resolves false for competing claims or stale attempts. Claims use
-  the supplied host/path, with trailing slashes normalized. The claim
+  the supplied host/path — an absolute POSIX path or a Windows drive-letter
+  path, matching the target host — with trailing slashes normalized. The claim
   is released by attachment or completed cancellation cleanup,
   including after failure. Stabilize after restart, cancellation,
   competing checkout, and path-reservation behavior has been audited.

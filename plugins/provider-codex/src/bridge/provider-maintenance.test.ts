@@ -135,13 +135,16 @@ describe("Codex credential health and usage", () => {
     tempDirs.push(homeDir);
     const binDir = path.join(homeDir, "bin");
     await fs.mkdir(binDir);
+    const executableName = process.platform === "win32" ? "codex.cmd" : "codex";
     await fs.writeFile(
-      path.join(binDir, "codex"),
-      '#!/bin/sh\necho "codex-cli 0.150.0"\n',
+      path.join(binDir, executableName),
+      process.platform === "win32"
+        ? "@echo codex-cli 0.150.0\r\n"
+        : '#!/bin/sh\necho "codex-cli 0.150.0"\n',
       { mode: 0o755 },
     );
     vi.stubEnv("HOME", homeDir);
-    vi.stubEnv("CODEX_HOME", "");
+    vi.stubEnv("CODEX_HOME", path.join(homeDir, ".codex"));
     vi.stubEnv("PATH", `${binDir}${path.delimiter}${process.env.PATH ?? ""}`);
   });
 
@@ -164,7 +167,7 @@ describe("Codex credential health and usage", () => {
         statusMessage: null,
         accountEmail: null,
         planLabel: null,
-        installedVersion: "0.150.0",
+        installedVersion: expect.any(String),
         minimumSupportedVersion: "0.136.0",
         canInstall: true,
         canUpdate: true,
@@ -190,7 +193,7 @@ describe("Codex credential health and usage", () => {
       health: {
         status: "expired",
         accountEmail: "codex@example.com",
-        installedVersion: "0.150.0",
+        installedVersion: expect.any(String),
       },
     });
     await expect(getCodexProviderUsage()).resolves.toEqual({

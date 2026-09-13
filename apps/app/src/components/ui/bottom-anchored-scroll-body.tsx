@@ -909,7 +909,7 @@ export function BottomAnchoredScrollBody({
       <TimelineScrollRestoreRowIdContext.Provider
         value={initialScrollRestoreRowId}
       >
-        <div className="grid min-h-0 flex-1 overflow-hidden">
+        <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
           <div
             ref={scrollAreaRef}
             className={cn(
@@ -936,16 +936,17 @@ export function BottomAnchoredScrollBody({
                 {children}
               </div>
               <div className="scroll-bottom-anchor" aria-hidden />
-              {footer ? (
-                <div
-                  data-scroll-footer=""
-                  className="sticky bottom-0 z-20 shrink-0 [overflow-anchor:none]"
-                >
-                  {footer}
-                </div>
-              ) : null}
             </div>
           </div>
+          {footer ? (
+            <div
+              data-scroll-footer=""
+              data-scroll-footer-external=""
+              className="z-20 col-start-1 row-start-2 min-h-0 shrink-0 [overflow-anchor:none]"
+            >
+              {footer}
+            </div>
+          ) : null}
           {scrollOverlay ? (
             <div
               data-scroll-overlay=""

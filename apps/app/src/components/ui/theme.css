@@ -84,6 +84,7 @@
   --color-sidebar-ring: var(--sidebar-ring);
 
   --font-sans: var(--font-sans);
+  --font-heading: var(--font-heading);
   --font-mono: var(--font-mono);
   --font-serif: var(--font-serif);
 
@@ -116,11 +117,33 @@
  * Overriding the --text-* tokens (rather than the .text-* classes) ensures
  * responsive variants like md:text-sm resolve to the same value and don't
  * collide with base classes in the cascade.
+ *
+ * Every tier except --text-2xs is multiplied by two factors:
+ *   --bb-typography-size — the density factor of the active typography
+ *     profile (html[data-bb-typography]); 1 for Standard.
+ *   --bb-font-scale — the user text scale (90–110%), set as an inline style
+ *     on <html> before first paint by the index.html pre-paint script.
+ * Unitless Tailwind line-height ratios auto-scale with the font size; the
+ * rem-based line-heights bb overrides are multiplied explicitly. --text-2xs
+ * is chrome-only 10px micro-copy and never scales: shrinking it below 10px
+ * fails AA, and it rides fixed-height chrome rows.
  */
 @theme {
-  --text-sm: 0.8125rem;
-  --text-base: 0.9375rem;
-  --text-base--line-height: 1.375rem;
+  --text-xs: calc(0.75rem * var(--bb-typography-size) * var(--bb-font-scale));
+  --text-sm: calc(0.8125rem * var(--bb-typography-size) * var(--bb-font-scale));
+  --text-base: calc(
+    0.9375rem * var(--bb-typography-size) * var(--bb-font-scale)
+  );
+  --text-base--line-height: calc(
+    1.375rem * var(--bb-typography-size) * var(--bb-font-scale)
+  );
+  --text-lg: calc(
+    1.125rem * var(--bb-typography-size) * var(--bb-font-scale)
+  );
+  --text-xl: calc(1.25rem * var(--bb-typography-size) * var(--bb-font-scale));
+  --text-2xl: calc(
+    1.5rem * var(--bb-typography-size) * var(--bb-font-scale)
+  );
   /* Cadence chrome size (unread divider, count chips, ids) — 10px. Chrome only;
    * never paired with a tier below --subtle-foreground or it fails AA at 10px. */
   --text-2xs: 0.625rem;
@@ -131,13 +154,64 @@
   :root {
     --text-2xs: 0.6875rem;
     --text-2xs--line-height: 0.9375rem;
-    --text-xs: 0.875rem;
-    --text-xs--line-height: 1.25rem;
-    --text-sm: 0.9375rem;
-    --text-sm--line-height: 1.375rem;
-    --text-base: 1rem;
-    --text-base--line-height: 1.5rem;
+    --text-xs: calc(
+      0.875rem * var(--bb-typography-size) * var(--bb-font-scale)
+    );
+    --text-xs--line-height: calc(
+      1.25rem * var(--bb-typography-size) * var(--bb-font-scale)
+    );
+    --text-sm: calc(
+      0.9375rem * var(--bb-typography-size) * var(--bb-font-scale)
+    );
+    --text-sm--line-height: calc(
+      1.375rem * var(--bb-typography-size) * var(--bb-font-scale)
+    );
+    --text-base: calc(1rem * var(--bb-typography-size) * var(--bb-font-scale));
+    --text-base--line-height: calc(
+      1.5rem * var(--bb-typography-size) * var(--bb-font-scale)
+    );
   }
+}
+
+/*
+ * Typography profiles. An orthogonal axis to color palettes: profiles only
+ * touch font families, the density factor, and type-driven rhythm tokens —
+ * never colors. html[data-bb-typography] is set before first paint by the
+ * index.html pre-paint script from the "bb.typography" localStorage mirror
+ * and reconciled with the server appearance by useTypography. The extra
+ * .bb-typography-preview[data-profile] arm lets Theme Preview cards render a
+ * profile locally without applying it app-wide; both arms are keyed off the
+ * same declarations so a preview can never drift from the real profile.
+ */
+html[data-bb-typography="compact"],
+.bb-typography-preview[data-profile="compact"] {
+  --bb-typography-size: 0.94;
+  --font-sans: "BB Fact", "Inter Variable", Inter, sans-serif;
+  --font-heading: "BB Magistral", "Inter Variable", Inter, sans-serif;
+  --font-mono: "BB PT Mono", ui-monospace, Consolas, monospace;
+}
+
+html[data-bb-typography="readable"],
+.bb-typography-preview[data-profile="readable"] {
+  --bb-typography-size: 1.06;
+  --font-sans: "BB Frutiger", "Inter Variable", Inter, sans-serif;
+  --font-heading: "BB Frutiger", "Inter Variable", Inter, sans-serif;
+  --font-mono: "BB PT Mono", ui-monospace, Consolas, monospace;
+}
+
+html[data-bb-typography="editorial"],
+.bb-typography-preview[data-profile="editorial"] {
+  --font-sans: "BB Fact", "Golos Text Variable", sans-serif;
+  --font-heading: "BB Crassula", "Golos Text Variable", sans-serif;
+  --font-mono: "BB PT Mono", ui-monospace, Consolas, monospace;
+}
+
+html[data-bb-typography="techno"],
+.bb-typography-preview[data-profile="techno"] {
+  --bb-typography-size: 0.96;
+  --font-sans: "BB PT Mono", "JetBrains Mono Variable", monospace;
+  --font-heading: "BB Magistral", "Inter Variable", Inter, sans-serif;
+  --font-mono: "BB PT Mono", "JetBrains Mono Variable", monospace;
 }
 
 @layer components {
@@ -553,13 +627,20 @@
   );
   --sidebar-ring: var(--primary);
   --font-sans: "Inter Variable", Inter, sans-serif;
+  --font-heading: "Inter Variable", Inter, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
+  --bb-typography-size: 1;
+  --bb-font-scale: 1;
   --radius: 0.5rem;
-  --bb-sidebar-row-height: 1.75rem;
-  --bb-sidebar-row-height-coarse: 2.5rem;
+  --bb-sidebar-row-height: calc(
+    1.75rem * var(--bb-typography-size) * var(--bb-font-scale)
+  );
+  --bb-sidebar-row-height-coarse: calc(
+    2.5rem * var(--bb-typography-size) * var(--bb-font-scale)
+  );
   --shadow-x: 0px;
   --shadow-y: 2px;
   --shadow-blur: 0px;
@@ -773,10 +854,13 @@
   );
   --sidebar-ring: var(--primary);
   --font-sans: "Inter Variable", Inter, sans-serif;
+  --font-heading: "Inter Variable", Inter, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
+  --bb-typography-size: 1;
+  --bb-font-scale: 1;
   --radius: 0.5rem;
   /* Dark shadows are pure black at higher alpha — a 20%-gray shadow is
    * invisible on the dark canvas, so floating surfaces (popovers, dropdowns)
@@ -856,6 +940,15 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
   }
 
   button,

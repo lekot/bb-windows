@@ -265,6 +265,7 @@ function turnSubmitCommand(
       permissionEscalation: null,
     },
     resumeContext: {
+      nativeSession: null,
       bridgeLaunch: harness.launch,
       workspaceContext: {
         workspacePath: harness.workspacePath,

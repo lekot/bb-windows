@@ -2,6 +2,10 @@ import { type ReactNode, useEffect, useMemo } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { DiffPresentation } from "@/components/code/code-rendering";
 import type { WorkspaceDiffTarget } from "@bb/domain";
+import {
+  resolveDeletedGitDiffFilePreviewSource,
+  type GitDiffFilePreviewHandler,
+} from "@/components/git-diff/git-diff-file-preview";
 import type { MarkdownLinkRouting } from "@/components/ui/markdown-link-routing.js";
 import { Skeleton } from "@bb/shared-ui/skeleton";
 import { EmptyStatePanel } from "@bb/shared-ui/empty-state";
@@ -51,7 +55,7 @@ interface GitDiffTabContentProps {
   gitDiffPresentation: DiffPresentation;
   onClearPendingGitDiffIntent?: () => void;
   onOpenFileInEditor?: (path: string) => void;
-  onOpenFilePreview?: (path: string) => void;
+  onOpenFilePreview?: GitDiffFilePreviewHandler;
   onSelectionAddToChat?: (text: string) => void;
   pendingGitDiffScrollPath?: string | null;
   workspaceRootPath?: string | null;
@@ -201,6 +205,8 @@ export function GitDiffTabContent({
     target,
     mergeBaseRef,
   });
+  const deletedFilePreviewSource =
+    target === undefined ? null : resolveDeletedGitDiffFilePreviewSource(target, mergeBaseRef);
 
   useEffect(() => {
     clearDiffFileCardStates(diffIdentity);
@@ -304,6 +310,7 @@ export function GitDiffTabContent({
         onScrolledToPath={onClearPendingGitDiffIntent}
         onOpenFileInEditor={onOpenFileInEditor}
         onOpenFilePreview={onOpenFilePreview}
+        deletedFilePreviewSource={deletedFilePreviewSource}
         onRequestFileContents={onRequestFileContents}
         onSelectionAddToChat={onSelectionAddToChat}
       />

@@ -114,6 +114,7 @@ function createTurnSubmitCommand(
       permissionEscalation: null,
     },
     resumeContext: {
+      nativeSession: null,
       bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
       workspaceContext: {
         workspacePath,

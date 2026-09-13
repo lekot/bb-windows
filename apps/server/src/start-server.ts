@@ -72,6 +72,8 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
     appVersion: serverConfig.BB_APP_VERSION,
     builtinSkillsRootPath: resolveBuiltinSkillsRootPath(),
     marketplaceUrl: serverConfig.BB_MARKETPLACE_URL,
+    localWhisperLanguage: serverConfig.BB_LOCAL_WHISPER_LANGUAGE,
+    localWhisperUrl: serverConfig.BB_LOCAL_WHISPER_URL,
     customModels: [],
     dataDir: serverConfig.BB_DATA_DIR,
     featureFlags: serverConfig.featureFlags,
@@ -84,6 +86,9 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
     serverPort: serverConfig.BB_SERVER_PORT,
     sharedSkillRoots: { user: [], project: [] },
     transcriptionModel: serverConfig.BB_TRANSCRIPTION,
+    voiceCorrectionApiKey: serverConfig.BB_VOICE_CORRECTION_API_KEY,
+    voiceCorrectionModel: serverConfig.BB_VOICE_CORRECTION_MODEL,
+    voiceCorrectionUrl: serverConfig.BB_VOICE_CORRECTION_URL,
   };
 
   const providerRegistry = createProviderRegistryService({

@@ -222,6 +222,7 @@ function FooterComposerDraftProbe() {
 
 function makeThread(): ThreadDetailSecondaryContentProps["metadata"]["thread"] {
   return {
+    providerSessionId: null,
     archivedAt: null,
     createdAt: 0,
     deletedAt: null,
@@ -238,12 +239,15 @@ function makeThread(): ThreadDetailSecondaryContentProps["metadata"]["thread"] {
     originPluginId: null,
     visibility: "visible",
     status: "idle",
-    stopRequestedAt: null,
     title: null,
     titleFallback: "Test thread",
     sectionId: null,
     updatedAt: 0,
-  } as ThreadDetailSecondaryContentProps["metadata"]["thread"];
+    runtime: { displayStatus: "idle", hostReconnectGraceExpiresAt: null },
+    activeBackgroundAgentCount: 0,
+    canSpawnChild: false,
+    queuedMessageCount: 0,
+  };
 }
 
 function createProps(

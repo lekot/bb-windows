@@ -22,6 +22,7 @@ import {
 } from "@bb/db";
 import {
   formatClientTurnRequestIdSuffix,
+  THREAD_CONTEXT_CLEAR_OPERATION,
   threadScope,
   turnScope,
 } from "@bb/domain";
@@ -35,6 +36,7 @@ import { DAEMON_ACTIVE_WORK_DISCONNECT_GRACE_MS } from "../../../src/constants.j
 import {
   resolveThreadRuntimeState,
   toThreadListEntryResponses,
+  toThreadResponseFromThread,
 } from "../../../src/services/threads/thread-runtime-display.js";
 import { NotificationHub } from "../../../src/ws/hub.js";
 import { createTestProviderRegistry } from "../../helpers/provider-registry.js";
@@ -224,6 +226,8 @@ function createThreadListEntry(
     ...args.thread,
     modelOverride: null,
     reasoningLevelOverride: null,
+    nativeTailFingerprint: null,
+  nativeResume: null,
     environmentBranchName: null,
     environmentPath: null,
     environmentProviderId: null,
@@ -730,5 +734,119 @@ describe("thread runtime display", () => {
       activePlanModeCount: 1,
       activeGoalCount: 0,
     });
+  });
+});
+
+describe("toThreadResponseFromThread provider session id", () => {
+  function recordProviderSession(args: {
+    db: DbConnection;
+    providerThreadId: string;
+    threadId: string;
+    turnId: string;
+  }): void {
+    appendStoredThreadEvent(args.db, noopNotifier, {
+      threadId: args.threadId,
+      scope: turnScope(args.turnId),
+      type: "turn/started",
+      providerThreadId: args.providerThreadId,
+      data: { providerThreadId: args.providerThreadId },
+    });
+  }
+
+  function completeContextClear(args: {
+    db: DbConnection;
+    operationId: string;
+    threadId: string;
+  }): void {
+    appendStoredThreadEvent(args.db, noopNotifier, {
+      threadId: args.threadId,
+      scope: threadScope(),
+      type: "system/operation",
+      data: {
+        operation: THREAD_CONTEXT_CLEAR_OPERATION,
+        operationId: args.operationId,
+        status: "completed",
+        message: "Fresh context",
+      },
+    });
+  }
+
+  it("follows the provider session across a context clear and a new session", () => {
+    const { db, hostId, hub } = setup();
+    const deps = { db, hub };
+    const { thread } = createThreadWithEnvironment({ db, hostId });
+
+    expect(
+      toThreadResponseFromThread(deps, { thread }).providerSessionId,
+    ).toBeNull();
+
+    recordProviderSession({
+      db,
+      threadId: thread.id,
+      turnId: "turn-session-a",
+      providerThreadId: "01a0904d-ea78-71c3-85ee-267caf69bb3f",
+    });
+    expect(toThreadResponseFromThread(deps, { thread }).providerSessionId).toBe(
+      "01a0904d-ea78-71c3-85ee-267caf69bb3f",
+    );
+
+    completeContextClear({ db, threadId: thread.id, operationId: "clear-1" });
+    expect(
+      toThreadResponseFromThread(deps, { thread }).providerSessionId,
+    ).toBeNull();
+
+    recordProviderSession({
+      db,
+      threadId: thread.id,
+      turnId: "turn-session-b",
+      providerThreadId: "0199aa11-bb22-cc33-dd44-ee55ff667788",
+    });
+    expect(toThreadResponseFromThread(deps, { thread }).providerSessionId).toBe(
+      "0199aa11-bb22-cc33-dd44-ee55ff667788",
+    );
+  });
+
+  it("reports the newest provider session of the requested thread only", () => {
+    const { db, hostId, hub } = setup();
+    const deps = { db, hub };
+    const codex = createThreadWithEnvironment({ db, hostId });
+    const zcode = createThreadWithEnvironment({
+      db,
+      hostId,
+      providerId: "acp-zcode",
+    });
+    const untouched = createThreadWithEnvironment({ db, hostId });
+
+    recordProviderSession({
+      db,
+      threadId: codex.thread.id,
+      turnId: "turn-codex-old",
+      providerThreadId: "codex-session-old",
+    });
+    recordProviderSession({
+      db,
+      threadId: zcode.thread.id,
+      turnId: "turn-zcode",
+      providerThreadId: "sess_a9ec5047-0492-4bc2-b7ba-baeb4867ac23",
+    });
+    recordProviderSession({
+      db,
+      threadId: codex.thread.id,
+      turnId: "turn-codex-new",
+      providerThreadId: "codex-session-new",
+    });
+
+    expect(
+      toThreadResponseFromThread(deps, { thread: codex.thread })
+        .providerSessionId,
+    ).toBe("codex-session-new");
+    expect(
+      toThreadResponseFromThread(deps, { thread: zcode.thread })
+        .providerSessionId,
+    ).toBe("sess_a9ec5047-0492-4bc2-b7ba-baeb4867ac23");
+    expect(
+      toThreadResponseFromThread(deps, { thread: untouched.thread })
+        .providerSessionId,
+    ).toBeNull();
   });
 });

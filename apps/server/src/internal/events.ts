@@ -395,6 +395,14 @@ async function applyEventEffects(
           ...event,
           threadId: entry.threadId,
         });
+        if (turnCompleted.thread) {
+          deps.pendingInteractions.interruptPendingInteractionsForThreads({
+            providerId: turnCompleted.thread.providerId,
+            threadIds: [entry.threadId],
+            turnId,
+            reason: "Provider turn ended while awaiting user interaction",
+          });
+        }
         if (
           turnCompleted.thread &&
           turnCompleted.isRootTurnCompletion &&

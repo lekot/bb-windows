@@ -76,6 +76,59 @@ describe("resolveThreadLocalFileLink", () => {
     });
   });
 
+  it("opens an absolute Windows task result outside the workspace as a host file", () => {
+    expect(
+      resolveThreadLocalFileLink({
+        hostFileLinksAvailable: true,
+        link: {
+          lineRange: null,
+          path: "C:\\Users\\example\\AppData\\Local\\Temp\\claude\\run\\tasks\\result.output",
+        },
+        threadStorageRootPath: null,
+        workspaceRootPath: "C:\\WS\\accounting_suite",
+      }),
+    ).toEqual({
+      kind: "open-host-path",
+      request: {
+        lineRange: null,
+        path: "C:/Users/example/AppData/Local/Temp/claude/run/tasks/result.output",
+      },
+    });
+  });
+
+  it("keeps Windows drive-root relative paths and root equality distinct", () => {
+    expect(
+      resolveThreadLocalFileLink({
+        hostFileLinksAvailable: true,
+        link: { lineRange: null, path: "C:\\Temp\\result.output" },
+        threadStorageRootPath: null,
+        workspaceRootPath: "C:\\",
+      }),
+    ).toEqual({
+      kind: "open-workspace-path",
+      request: {
+        lineRange: null,
+        path: "C:/Temp/result.output",
+        relativePath: "Temp/result.output",
+        workspaceRootPath: "C:/",
+      },
+    });
+    expect(
+      resolveThreadLocalFileLink({
+        hostFileLinksAvailable: true,
+        link: { lineRange: null, path: "c:\\WS\\ACCOUNTING_SUITE" },
+        threadStorageRootPath: null,
+        workspaceRootPath: "C:\\ws\\accounting_suite",
+      }),
+    ).toEqual({
+      kind: "open-host-path",
+      request: {
+        lineRange: null,
+        path: "C:/WS/ACCOUNTING_SUITE",
+      },
+    });
+  });
+
   it("normalizes paths before checking workspace containment", () => {
     expect(
       resolveThreadLocalFileLink({

@@ -34,6 +34,12 @@ import type {
   ThreadCountQuery,
   ThreadCountResponse,
   ThreadListResponse,
+  ThreadNativeHistoryQuery,
+  ThreadNativeHistoryResponse,
+  ThreadNativeImageResponse,
+  ThreadNativeQuotaResponse,
+  ThreadDesktopSyncResponse,
+  ThreadDesktopRegisterResponse,
   ThreadRunningResponse,
   ThreadOpenResponse,
   ThreadPaneAction,
@@ -193,6 +199,29 @@ export type ThreadArchiveAllResult = ThreadArchiveAllResponse;
 export type ThreadReadStateResult = ThreadResponse;
 export type ThreadPinOrderResult = ThreadListResponse;
 export type ThreadPromptHistoryResult = PromptHistoryResponse;
+export type ThreadNativeHistoryResult = ThreadNativeHistoryResponse;
+export type ThreadNativeQuotaResult = ThreadNativeQuotaResponse;
+export interface ThreadNativeQuotaArgs {
+  signal?: AbortSignal;
+  threadId: string;
+}
+export type ThreadDesktopSyncResult = ThreadDesktopSyncResponse;
+export interface ThreadDesktopSyncArgs {
+  signal?: AbortSignal;
+  threadId: string;
+}
+export type ThreadDesktopRegisterResult = ThreadDesktopRegisterResponse;
+export interface ThreadDesktopRegisterArgs {
+  signal?: AbortSignal;
+  threadId: string;
+  apply: boolean;
+}
+export interface ThreadNativeImageArgs {
+  signal?: AbortSignal;
+  threadId: string;
+  messageId: string;
+  attachmentId: string;
+}
 export type ThreadQueuedMessagesResult = ThreadQueuedMessageListResponse;
 export type ThreadQueuedMessageCreateResult = ThreadQueuedMessage;
 export type ThreadQueuedMessageUpdateResult = ThreadQueuedMessage;
@@ -404,6 +433,13 @@ export interface ThreadOutputArgs {
   threadId: string;
 }
 
+export interface ThreadNativeHistoryArgs {
+  before?: ThreadNativeHistoryQuery["before"];
+  limit?: number;
+  signal?: AbortSignal;
+  threadId: string;
+}
+
 export interface ThreadInteractionListArgs {
   signal?: AbortSignal;
   threadId: string;
@@ -584,6 +620,15 @@ export interface ThreadsArea {
   promptHistory(
     args: ThreadPromptHistoryArgs,
   ): Promise<ThreadPromptHistoryResult>;
+  nativeHistory(
+    args: ThreadNativeHistoryArgs,
+  ): Promise<ThreadNativeHistoryResult>;
+  nativeQuota(args: ThreadNativeQuotaArgs): Promise<ThreadNativeQuotaResult>;
+  desktopSync(args: ThreadDesktopSyncArgs): Promise<ThreadDesktopSyncResult>;
+  desktopRegister(
+    args: ThreadDesktopRegisterArgs,
+  ): Promise<ThreadDesktopRegisterResult>;
+  nativeImage(args: ThreadNativeImageArgs): Promise<ThreadNativeImageResponse>;
   queuedMessages: ThreadQueuedMessagesArea;
   reorderPinned(args: ThreadPinOrderArgs): Promise<ThreadPinOrderResult>;
   resolveMentions(
@@ -661,6 +706,7 @@ function updateJson(args: ThreadUpdateArgs): UpdateThreadRequest {
     model: args.model,
     reasoningLevel: args.reasoningLevel,
     visibility: args.visibility,
+    adoptNativeSessionId: args.adoptNativeSessionId,
   };
 }
 
@@ -1239,6 +1285,57 @@ export function createThreadsArea(args: CreateSdkAreaArgs): ThreadsArea {
           {
             param: { id: input.threadId },
             query: { limit: input.limit },
+          },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
+    async nativeHistory(input) {
+      return transport.readJson(
+        transport.api.v1.threads[":id"]["native-history"].$get(
+          {
+            param: { id: input.threadId },
+            query: {
+              ...(input.before === undefined ? {} : { before: input.before }),
+              ...(input.limit === undefined
+                ? {}
+                : { limit: String(input.limit) }),
+            },
+          },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
+    async nativeImage(input) {
+      return transport.readJson(
+        transport.api.v1.threads[":id"]["native-image"].$get({
+          param: { id: input.threadId },
+          query: { messageId: input.messageId, attachmentId: input.attachmentId },
+        }, ...signalRequestArgs(input.signal)),
+      );
+    },
+    async nativeQuota(input) {
+      return transport.readJson(
+        transport.api.v1.threads[":id"]["native-quota"].$get(
+          { param: { id: input.threadId } },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
+    async desktopSync(input) {
+      return transport.readJson(
+        transport.api.v1.threads[":id"]["desktop-sync"].$get(
+          { param: { id: input.threadId } },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
+    async desktopRegister(input) {
+      return transport.readJson(
+        transport.api.v1.threads[":id"]["desktop-register"].$post(
+          {
+            param: { id: input.threadId },
+            json: { apply: input.apply },
           },
           ...signalRequestArgs(input.signal),
         ),

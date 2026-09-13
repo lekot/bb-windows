@@ -202,13 +202,16 @@ describe("resolveLocalBbExecutablePath", () => {
       executable: false,
     });
 
-    await expect(
-      resolveLocalBbExecutablePath({
-        cliExecutablePath: cliEntryPath,
-      }),
-    ).rejects.toThrow(
-      `Resolved bb CLI entry is not executable: ${cliEntryPath}. Build @bb/cli before starting the host daemon.`,
-    );
+    const result = resolveLocalBbExecutablePath({
+      cliExecutablePath: cliEntryPath,
+    });
+    if (process.platform === "win32") {
+      await expect(result).resolves.toBe(cliEntryPath);
+    } else {
+      await expect(result).rejects.toThrow(
+        `Resolved bb CLI entry is not executable: ${cliEntryPath}. Build @bb/cli before starting the host daemon.`,
+      );
+    }
   });
 
   it("skips the execute-bit check on win32", async () => {

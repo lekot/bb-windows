@@ -201,6 +201,8 @@ export async function createTestAppHarness(
     featureFlags: defaultFeatureFlags,
     hostDaemonPort: 3001,
     marketplaceUrl: "https://marketplace.invalid/marketplace.json",
+    localWhisperLanguage: "ru",
+    localWhisperUrl: "http://127.0.0.1:9003/asr",
     inheritedSkillsRootPaths: [],
     inferenceFallbackModel: "test/mock-fallback-model",
     inferenceModel: "test/mock-model",
@@ -209,6 +211,9 @@ export async function createTestAppHarness(
     serverPort: 3334,
     sharedSkillRoots: { user: [], project: [] },
     transcriptionModel: "test/mock-transcription",
+    voiceCorrectionApiKey: "",
+    voiceCorrectionModel: "glm-5.3-flash",
+    voiceCorrectionUrl: "",
     appUrl: "https://bb.example.test",
     ...configOverrides,
   };

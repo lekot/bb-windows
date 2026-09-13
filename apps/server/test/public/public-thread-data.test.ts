@@ -1,3 +1,4 @@
+import { join, resolve } from "node:path";
 import { and, eq } from "drizzle-orm";
 import {
   claimQueuedThreadMessage,
@@ -4146,7 +4147,12 @@ describe("public thread data routes", () => {
         projectId: project.id,
         environmentId: environment.id,
       });
-      const threadStoragePath = `/tmp/bb-host-data/${host.id}/thread-storage/${thread.id}`;
+      const threadStoragePath = join(
+        "/tmp/bb-host-data",
+        host.id,
+        "thread-storage",
+        thread.id,
+      );
 
       const filesPromise = harness.app.request(
         `/api/v1/threads/${thread.id}/thread-storage/files?query=notes`,
@@ -4208,7 +4214,12 @@ describe("public thread data routes", () => {
         threadStorageLocationResponseSchema.parse(await readJson(response)),
       ).toEqual({
         hostId: host.id,
-        storageRootPath: `/tmp/bb-host-data/${host.id}/thread-storage/${thread.id}`,
+        storageRootPath: join(
+          "/tmp/bb-host-data",
+          host.id,
+          "thread-storage",
+          thread.id,
+        ),
       });
     });
   });
@@ -4229,7 +4240,12 @@ describe("public thread data routes", () => {
         projectId: project.id,
         environmentId: environment.id,
       });
-      const threadStoragePath = `/tmp/bb-host-data/${host.id}/thread-storage/${thread.id}`;
+      const threadStoragePath = join(
+        "/tmp/bb-host-data",
+        host.id,
+        "thread-storage",
+        thread.id,
+      );
 
       const pathsPromise = harness.app.request(
         `/api/v1/threads/${thread.id}/thread-storage/paths?query=notes&includeFiles=true&includeDirectories=true`,
@@ -4309,7 +4325,12 @@ describe("public thread data routes", () => {
         projectId: project.id,
         environmentId: environment.id,
       });
-      const threadStoragePath = `/tmp/bb-host-data/${host.id}/thread-storage/${thread.id}`;
+      const threadStoragePath = join(
+        "/tmp/bb-host-data",
+        host.id,
+        "thread-storage",
+        thread.id,
+      );
 
       const filesPromise = harness.app.request(
         `/api/v1/threads/${thread.id}/thread-storage/files`,
@@ -4362,7 +4383,12 @@ describe("public thread data routes", () => {
         environmentId: environment.id,
         status: "starting",
       });
-      const threadStoragePath = `/tmp/bb-host-data/${host.id}/thread-storage/${thread.id}`;
+      const threadStoragePath = join(
+        "/tmp/bb-host-data",
+        host.id,
+        "thread-storage",
+        thread.id,
+      );
 
       const filesPromise = harness.app.request(
         `/api/v1/threads/${thread.id}/thread-storage/files`,
@@ -4405,8 +4431,17 @@ describe("public thread data routes", () => {
         environmentId: environment.id,
       });
       const pngBytes = Uint8Array.from([137, 80, 78, 71]);
-      const threadStorageRoot = `/tmp/bb-host-data/${host.id}/thread-storage/${thread.id}`;
-      const threadStorageFilePath = `${threadStorageRoot}/images/diagram.png`;
+      const threadStorageRoot = join(
+        "/tmp/bb-host-data",
+        host.id,
+        "thread-storage",
+        thread.id,
+      );
+      const threadStorageFilePath = join(
+        threadStorageRoot,
+        "images",
+        "diagram.png",
+      );
 
       const filePromise = harness.app.request(
         `/api/v1/threads/${thread.id}/thread-storage/content?path=${encodeURIComponent("images/diagram.png")}`,
@@ -4504,15 +4539,15 @@ describe("public thread data routes", () => {
         harness,
         ({ command }) =>
           command.type === "host.read_file" &&
-          command.path === "/tmp/project-source/public/report.html",
+          command.path === join("/tmp/project-source", "public", "report.html"),
       );
       expect(fileCommand.command).toMatchObject({
         type: "host.read_file",
-        path: "/tmp/project-source/public/report.html",
+        path: join("/tmp/project-source", "public", "report.html"),
         rootPath: "/tmp/project-source",
       });
       await reportQueuedCommandSuccess(harness, fileCommand, {
-        path: "/tmp/project-source/public/report.html",
+        path: join("/tmp/project-source", "public", "report.html"),
         content: html,
         contentEncoding: "utf8",
         mimeType: "text/html",
@@ -4551,7 +4586,12 @@ describe("public thread data routes", () => {
         projectId: project.id,
         environmentId: environment.id,
       });
-      const threadStorageRoot = `/tmp/bb-host-data/${host.id}/thread-storage/${thread.id}`;
+      const threadStorageRoot = join(
+        "/tmp/bb-host-data",
+        host.id,
+        "thread-storage",
+        thread.id,
+      );
       const html = "<!doctype html><h1>Preview</h1>";
 
       const filePromise = harness.app.request(
@@ -4561,15 +4601,16 @@ describe("public thread data routes", () => {
         harness,
         ({ command }) =>
           command.type === "host.read_file" &&
-          command.path === `${threadStorageRoot}/reports/preview v2.html`,
+          command.path ===
+            join(threadStorageRoot, "reports", "preview v2.html"),
       );
       expect(fileCommand.command).toMatchObject({
         type: "host.read_file",
-        path: `${threadStorageRoot}/reports/preview v2.html`,
+        path: join(threadStorageRoot, "reports", "preview v2.html"),
         rootPath: threadStorageRoot,
       });
       await reportQueuedCommandSuccess(harness, fileCommand, {
-        path: `${threadStorageRoot}/reports/preview v2.html`,
+        path: join(threadStorageRoot, "reports", "preview v2.html"),
         content: html,
         contentEncoding: "utf8",
         mimeType: "text/html",
@@ -4614,14 +4655,14 @@ describe("public thread data routes", () => {
         harness,
         ({ command }) =>
           command.type === "host.read_file" &&
-          command.path === "/tmp/anywhere/report.html",
+          command.path === resolve("/tmp/anywhere/report.html"),
       );
       expect(fileCommand.command).toMatchObject({
         type: "host.read_file",
-        path: "/tmp/anywhere/report.html",
+        path: resolve("/tmp/anywhere/report.html"),
       });
       await reportQueuedCommandSuccess(harness, fileCommand, {
-        path: "/tmp/anywhere/report.html",
+        path: resolve("/tmp/anywhere/report.html"),
         content: html,
         contentEncoding: "utf8",
         mimeType: "text/html",
@@ -4712,7 +4753,7 @@ describe("public thread data routes", () => {
         harness,
         ({ command }) =>
           command.type === "host.read_file" &&
-          command.path === "/tmp/project-source/large.html",
+          command.path === join("/tmp/project-source", "large.html"),
       );
       await reportQueuedCommandSuccess(harness, fileCommand, {
         path: "/tmp/project-source/large.html",
@@ -4893,7 +4934,12 @@ describe("public thread data routes", () => {
   it("maps thread storage root-escape failures to invalid_path", async () => {
     await withTestHarness(async (harness) => {
       const { host, thread } = seedThreadFixture(harness);
-      const threadStorageRoot = `/tmp/bb-host-data/${host.id}/thread-storage/${thread.id}`;
+      const threadStorageRoot = join(
+        "/tmp/bb-host-data",
+        host.id,
+        "thread-storage",
+        thread.id,
+      );
 
       const filePromise = harness.app.request(
         `/api/v1/threads/${thread.id}/thread-storage/content?path=${encodeURIComponent("notes/secrets")}`,
@@ -4902,10 +4948,10 @@ describe("public thread data routes", () => {
         harness,
         ({ command }) =>
           command.type === "host.read_file" &&
-          command.path === `${threadStorageRoot}/notes/secrets`,
+          command.path === join(threadStorageRoot, "notes", "secrets"),
       );
       expect(fileCommand.command).toMatchObject({
-        path: `${threadStorageRoot}/notes/secrets`,
+        path: join(threadStorageRoot, "notes", "secrets"),
         rootPath: threadStorageRoot,
       });
       const fileErrorResponse = await reportQueuedCommandError(
@@ -4931,7 +4977,12 @@ describe("public thread data routes", () => {
   it("returns an empty thread storage file list when the durable storage is absent", async () => {
     await withTestHarness(async (harness) => {
       const { host, thread } = seedThreadFixture(harness);
-      const threadStoragePath = `/tmp/bb-host-data/${host.id}/thread-storage/${thread.id}`;
+      const threadStoragePath = join(
+        "/tmp/bb-host-data",
+        host.id,
+        "thread-storage",
+        thread.id,
+      );
 
       const filesPromise = harness.app.request(
         `/api/v1/threads/${thread.id}/thread-storage/files`,

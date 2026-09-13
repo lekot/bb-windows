@@ -1,5 +1,8 @@
 import { extractErrorMessage, toRecord } from "@bb/core-ui";
-import type { SystemVoiceTranscriptionResponse } from "@bb/server-contract";
+import type {
+  SystemVoiceCorrectionResponse,
+  SystemVoiceTranscriptionResponse,
+} from "@bb/server-contract";
 import { apiClient, toRelativeUrl } from "./api-server";
 import { appSurfaceRequestInit } from "./app-surface";
 import {
@@ -184,6 +187,23 @@ export async function transcribeVoiceInput(
     file,
     signal,
     trimmedPrompt ? { prompt: trimmedPrompt } : undefined,
+  );
+}
+
+export async function correctVoiceText(
+  text: string,
+  signal?: AbortSignal,
+): Promise<SystemVoiceCorrectionResponse> {
+  return request<SystemVoiceCorrectionResponse>(
+    fetch(
+      toRelativeUrl(apiClient.system["voice-correction"].$url()),
+      appSurfaceRequestInit({
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text }),
+        signal,
+      }),
+    ),
   );
 }
 

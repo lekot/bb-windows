@@ -24,6 +24,25 @@ afterEach(() => {
 });
 
 describe("HeightTransition", () => {
+  it("hides collapsed controls from accessibility while preserving their state", () => {
+    const view = render(
+      <HeightTransition visible={false}>
+        <button>Working details</button>
+      </HeightTransition>,
+    );
+    const button = view.getByRole("button", { hidden: true });
+    const wrapper = button.parentElement?.parentElement;
+    expect(view.queryByRole("button")).toBeNull();
+    expect(wrapper?.hasAttribute("inert")).toBe(true);
+    view.rerender(
+      <HeightTransition visible>
+        <button>Working details</button>
+      </HeightTransition>,
+    );
+    expect(view.getByRole("button")).toBe(button);
+    expect(wrapper?.hasAttribute("inert")).toBe(false);
+  });
+
   it("pauses descendant animations while preserving collapsed content state", () => {
     const view = render(
       <HeightTransition visible={false}>

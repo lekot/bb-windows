@@ -217,6 +217,7 @@ describe("acpProviderDeclaration", () => {
     expect(byId.get("acp-cursor")?.capabilities.fork).toBe("none");
     expect(byId.get("acp-grok")?.capabilities.fork).toBe("none");
     expect(byId.get("acp-opencode")?.capabilities.fork).toBe("tip");
+    expect(byId.get("acp-deepseek-harness")?.capabilities.fork).toBe("none");
     expect(byId.get("acp-cursor")?.experimental_bridgeOptions).toMatchObject({
       acpDialect: "cursor",
       parameterizedModelPicker: true,
@@ -243,10 +244,39 @@ describe("acpProviderDeclaration", () => {
     });
     expect(byId.get("acp-opencode")?.experimental_bridgeOptions).toMatchObject({
       acpDialect: "opencode",
+      parameterizedModelPicker: true,
+      primaryModels: [
+        "deepseek/deepseek-v4-flash",
+        "deepseek/deepseek-v4-pro",
+        "deepseek/deepseek-v4-flash-vision-exp",
+      ],
     });
     expect(
       byId.get("acp-opencode")?.capabilities.supportsManualCompaction,
     ).toBe(true);
+    expect(
+      byId.get("acp-deepseek-harness")?.experimental_bridgeOptions,
+    ).toMatchObject({
+      parameterizedModelPicker: true,
+      primaryModels: [
+        "deepseek-flash",
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+      ],
+      reasoningProbePriorityModelIds: ["deepseek-flash"],
+      acpLaunchSpec: {
+        command: process.platform === "win32" ? "pwsh.exe" : "dsh",
+      },
+    });
+    const harness = KNOWN_ACP_AGENTS.find(
+      (agent) => agent.id === "acp-deepseek-harness",
+    );
+    expect(harness?.launch.args.join(" ")).toContain("--profile acp");
+    expect(byId.get("acp-opencode")?.capabilities.reasoningLevels).toEqual([
+      "low",
+      "high",
+      "max",
+    ]);
     expect(byId.get("acp-cursor")?.capabilities.supportsManualCompaction).toBe(
       false,
     );
@@ -294,5 +324,40 @@ describe("acpProviderDeclaration", () => {
       "Sign in to Amp on the machine, then reload.",
     );
     expect(declaration.maintenance?.usage).toBe(false);
+  });
+});
+
+describe("zcode reasoning levels", () => {
+  it("declares only the native low/high/max ladder for the zcode slug", () => {
+    const declaration = acpProviderDeclaration(
+      customAcpAgentDefinition({
+        id: "zcode",
+        displayName: "ZCode",
+        command: "zcode-acp",
+        args: [],
+        env: {},
+        supportsManualCompaction: false,
+      }),
+    );
+    expect(declaration.capabilities?.reasoningLevels).toEqual([
+      "low",
+      "high",
+      "max",
+    ]);
+    expect(declaration.maintenance?.usage).toBe(true);
+  });
+
+  it("keeps the generic ACP ladder for agents without a slug override", () => {
+    const declaration = acpProviderDeclaration(
+      customAcpAgentDefinition({
+        id: "other-agent",
+        displayName: "Other",
+        command: "other",
+        args: [],
+        env: {},
+        supportsManualCompaction: false,
+      }),
+    );
+    expect(declaration.capabilities?.reasoningLevels).toContain("medium");
   });
 });

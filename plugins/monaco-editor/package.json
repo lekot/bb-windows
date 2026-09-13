@@ -39,6 +39,7 @@
     "bb-plugin"
   ],
   "scripts": {
+    "build:app": "node --conditions=source --import tsx scripts/build-app.mjs",
     "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build:monaco": "node scripts/stage-assets.mjs",

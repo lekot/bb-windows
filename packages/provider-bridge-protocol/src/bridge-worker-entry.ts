@@ -90,8 +90,19 @@ try {
 
 entry.start?.({ pluginId, dataDir, tempDir });
 
+let gracefulShutdownStarted = false;
+function runGracefulShutdown(): void {
+  if (gracefulShutdownStarted) return;
+  gracefulShutdownStarted = true;
+  if (entry.onSigterm) {
+    entry.onSigterm();
+    return;
+  }
+  process.exit(0);
+}
+
 if (entry.onSigterm) {
-  process.once("SIGTERM", entry.onSigterm);
+  process.once("SIGTERM", runGracefulShutdown);
 }
 if (entry.onSigint) {
   process.once("SIGINT", entry.onSigint);
@@ -114,5 +125,6 @@ readBoundedLines({
   onClose: () => {
     removeTempDir();
     entry.onClose?.();
+    runGracefulShutdown();
   },
 });

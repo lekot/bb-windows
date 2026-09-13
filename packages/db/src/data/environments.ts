@@ -120,7 +120,7 @@ export function findProviderEnvironmentContainingPath(
         and(
           or(
             eq(environments.path, path),
-            sql`${path} LIKE ${environments.path} || '/%'`,
+            sql`replace(${path}, '\\', '/') LIKE replace(${environments.path}, '\\', '/') || '/%'`,
           ),
           eq(environments.providerOwnsPath, true),
           ne(environments.status, "destroyed"),
@@ -143,7 +143,7 @@ export function findForeignManagedEnvironmentAtHostPath(
           eq(environments.hostId, args.hostId),
           or(
             eq(environments.path, args.path),
-            sql`${args.path} LIKE ${environments.path} || '/%'`,
+            sql`replace(${args.path}, '\\', '/') LIKE replace(${environments.path}, '\\', '/') || '/%'`,
           ),
           eq(environments.providerOwnsPath, true),
           ne(environments.projectId, args.projectId),

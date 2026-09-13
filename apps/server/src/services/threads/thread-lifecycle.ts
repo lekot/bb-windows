@@ -1105,38 +1105,45 @@ async function requestThreadStartOnce(
   await ensureHostSessionReadyForWork(deps, {
     hostId: args.environment.hostId,
   });
-  const result = dispatchThreadStartFromRequest(deps, {
-    command,
-    sourceThreadStatus: args.thread.status,
-    threadId: args.thread.id,
-  });
-  if (result.disposition === "started") {
-    inFlightThreadRpcGuard.claim(args.thread.id, "thread.start");
-    if (args.syncGeneratedTitle) {
-      inFlightThreadRpcGuard.claim(args.thread.id, "thread.start.title-sync");
-    }
-    void runLiveHostCommand(deps, {
-      command,
-      hostId: args.environment.hostId,
-      timeoutMs: LIVE_DAEMON_COMMAND_TIMEOUT_MS,
-    })
-      .catch((error) => {
-        deps.logger.warn(
-          { err: error, threadId: args.thread.id },
-          "Live thread start command failed",
-        );
-      })
-      .finally(() => {
-        inFlightThreadRpcGuard.release(args.thread.id, "thread.start");
-        inFlightThreadRpcGuard.release(
-          args.thread.id,
-          "thread.start.title-sync",
-        );
-        if (getThreadProvisionContext(deps.db, args.thread.id) !== null) {
-          scheduleThreadProvisioningAdvance(deps, args.thread.id);
-        }
-      });
+  if (!inFlightThreadRpcGuard.claim(args.thread.id, "thread.start")) {
+    return;
   }
+  let result: DispatchThreadStartFromRequestResult;
+  try {
+    result = dispatchThreadStartFromRequest(deps, {
+      command,
+      sourceThreadStatus: args.thread.status,
+      threadId: args.thread.id,
+    });
+  } catch (error) {
+    inFlightThreadRpcGuard.release(args.thread.id, "thread.start");
+    throw error;
+  }
+  if (result.disposition !== "started") {
+    inFlightThreadRpcGuard.release(args.thread.id, "thread.start");
+    return;
+  }
+  if (args.syncGeneratedTitle) {
+    inFlightThreadRpcGuard.claim(args.thread.id, "thread.start.title-sync");
+  }
+  void runLiveHostCommand(deps, {
+    command,
+    hostId: args.environment.hostId,
+    timeoutMs: LIVE_DAEMON_COMMAND_TIMEOUT_MS,
+  })
+    .catch((error) => {
+      deps.logger.warn(
+        { err: error, threadId: args.thread.id },
+        "Live thread start command failed",
+      );
+    })
+    .finally(() => {
+      inFlightThreadRpcGuard.release(args.thread.id, "thread.start");
+      inFlightThreadRpcGuard.release(args.thread.id, "thread.start.title-sync");
+      if (getThreadProvisionContext(deps.db, args.thread.id) !== null) {
+        scheduleThreadProvisioningAdvance(deps, args.thread.id);
+      }
+    });
 }
 
 function requestThreadStop(

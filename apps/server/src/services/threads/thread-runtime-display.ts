@@ -34,7 +34,10 @@ import { DAEMON_ACTIVE_WORK_DISCONNECT_GRACE_MS } from "../../constants.js";
 import type { NotificationHub } from "../../ws/hub.js";
 import { resolveProviderPlanCommand } from "../providers/provider-plan-command.js";
 import type { ProviderRegistryService } from "../providers/provider-registry.js";
-import { listQueuedThreadMessageCountsByThreadIds } from "@bb/db";
+import {
+  getLastStoredProviderThreadId,
+  listQueuedThreadMessageCountsByThreadIds,
+} from "@bb/db";
 import { resolveEnvironmentWorkspaceDisplayKind } from "../environments/environment-response.js";
 import { canThreadSpawnChild } from "./thread-parent.js";
 import { toThreadEventWithMeta } from "./timeline.js";
@@ -359,6 +362,7 @@ export function toThreadResponseFromThread(
       listQueuedThreadMessageCountsByThreadIds(deps.db, {
         threadIds: [args.thread.id],
       })[0]?.queuedMessageCount ?? 0,
+    providerSessionId: getLastStoredProviderThreadId(deps.db, args.thread.id),
   };
 }
 

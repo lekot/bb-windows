@@ -48,15 +48,15 @@ it("reads auth.json from CODEX_HOME when configured", async () => {
 it("reports a missing auth.json as codex_auth_missing and an unparsable one as codex_auth_invalid", async () => {
   const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "bb-codex-home-"));
   tempDirs.push(homeDir);
+  const codexHome = path.join(homeDir, ".codex");
   vi.stubEnv("HOME", homeDir);
-  vi.stubEnv("CODEX_HOME", "");
+  vi.stubEnv("CODEX_HOME", codexHome);
 
   await expect(readCodexAuthCredentials()).rejects.toMatchObject({
     code: "auth_required",
     detailCode: "codex_auth_missing",
   });
 
-  const codexHome = path.join(homeDir, ".codex");
   await fs.mkdir(codexHome, { recursive: true });
   await fs.writeFile(path.join(codexHome, "auth.json"), "{not json");
   await expect(readCodexAuthCredentials()).rejects.toMatchObject({
@@ -68,8 +68,9 @@ it("reports a missing auth.json as codex_auth_missing and an unparsable one as c
 it("reads ChatGPT credentials with the account id from the access token claims", async () => {
   const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "bb-codex-home-"));
   tempDirs.push(homeDir);
+  const codexHome = path.join(homeDir, ".codex");
   vi.stubEnv("HOME", homeDir);
-  vi.stubEnv("CODEX_HOME", "");
+  vi.stubEnv("CODEX_HOME", codexHome);
   const base64UrlJson = (value: object) =>
     Buffer.from(JSON.stringify(value)).toString("base64url");
   const accessToken = `${base64UrlJson({ alg: "none" })}.${base64UrlJson({
@@ -80,7 +81,6 @@ it("reads ChatGPT credentials with the account id from the access token claims",
       chatgpt_account_is_fedramp: true,
     },
   })}.sig`;
-  const codexHome = path.join(homeDir, ".codex");
   await fs.mkdir(codexHome, { recursive: true });
   await fs.writeFile(
     path.join(codexHome, "auth.json"),

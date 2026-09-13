@@ -1,7 +1,11 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { getStoredFaviconColor, getStoredThemeId } from "@bb/db";
+import {
+  getStoredAppearance,
+  getStoredFaviconColor,
+  getStoredThemeId,
+} from "@bb/db";
 import {
   appThemeSchema,
   builtInPaletteCodeThemes,
@@ -360,6 +364,106 @@ describe("appearance settings", () => {
       expect(appThemeSchema.parse(await readJson(put))).toEqual(
         appearanceForPalette("dracula"),
       );
+    });
+  });
+
+  it("persists the typography profile and font scale", async () => {
+    await withTestHarness(async (harness) => {
+      const put = await harness.app.request("/api/v1/settings/appearance", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          themeId: "default",
+          faviconColor: "default",
+          typographyProfile: "editorial",
+          fontScalePercent: 105,
+        }),
+      });
+      expect(put.status).toBe(200);
+      expect(appThemeSchema.parse(await readJson(put))).toEqual({
+        ...defaultAppTheme,
+        typographyProfile: "editorial",
+        fontScalePercent: 105,
+      });
+      expect(getStoredAppearance(harness.db)).toEqual({
+        themeId: "default",
+        faviconColor: "default",
+        typographyProfile: "editorial",
+        fontScalePercent: 105,
+      });
+
+      const config = systemConfigResponseSchema.parse(
+        await readJson(await harness.app.request("/api/v1/system/config")),
+      );
+      expect(config.appearance.typographyProfile).toBe("editorial");
+      expect(config.appearance.fontScalePercent).toBe(105);
+    });
+  });
+
+  it("keeps stored typography when a write omits it", async () => {
+    await withTestHarness(async (harness) => {
+      await harness.app.request("/api/v1/settings/appearance", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          themeId: "default",
+          faviconColor: "default",
+          typographyProfile: "techno",
+          fontScalePercent: 95,
+        }),
+      });
+
+      const put = await harness.app.request("/api/v1/settings/appearance", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ themeId: "nord", faviconColor: "teal" }),
+      });
+      expect(put.status).toBe(200);
+      expect(getStoredAppearance(harness.db)).toEqual({
+        themeId: "nord",
+        faviconColor: "teal",
+        typographyProfile: "techno",
+        fontScalePercent: 95,
+      });
+      expect(appThemeSchema.parse(await readJson(put))).toEqual(
+        appearanceForPalette("nord", {
+          faviconColor: "teal",
+          typographyProfile: "techno",
+          fontScalePercent: 95,
+        }),
+      );
+    });
+  });
+
+  it("rejects an unknown typography profile and out-of-range scale", async () => {
+    await withTestHarness(async (harness) => {
+      const badProfile = await harness.app.request(
+        "/api/v1/settings/appearance",
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            themeId: "default",
+            faviconColor: "default",
+            typographyProfile: "fold",
+          }),
+        },
+      );
+      expect(badProfile.status).toBe(400);
+
+      const badScale = await harness.app.request(
+        "/api/v1/settings/appearance",
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            themeId: "default",
+            faviconColor: "default",
+            fontScalePercent: 130,
+          }),
+        },
+      );
+      expect(badScale.status).toBe(400);
     });
   });
 });

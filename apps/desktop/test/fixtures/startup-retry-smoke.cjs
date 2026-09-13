@@ -31,6 +31,7 @@ async function run() {
       response.end(
         JSON.stringify({
           hostDaemonPort: 38887,
+          voiceCorrectionEnabled: false,
           voiceTranscriptionEnabled: false,
         }),
       );

@@ -51,6 +51,7 @@ export const claudeThreadStartParamsSchema = z.object({
   model: z.string().optional(),
   reasoningLevel: reasoningLevelSchema.optional(),
   workflowsEnabled: z.boolean(),
+  idleQueryReleaseEnabled: z.boolean(),
   chromeEnabled: z.boolean(),
   memoryEnabled: z.boolean().optional(),
   providerSubagentsEnabled: z.boolean().optional(),
@@ -59,10 +60,21 @@ export const claudeThreadStartParamsSchema = z.object({
   disallowedTools: z.array(z.string()).optional(),
 });
 
+const bridgeNativeOverridesSchema = z
+  .object({
+    model: z.boolean(),
+    permissions: z.boolean(),
+    reasoningLevel: z.boolean(),
+    serviceTier: z.boolean(),
+  })
+  .strict();
+
 export const claudeThreadResumeParamsSchema =
   claudeThreadStartParamsSchema.extend({
     providerThreadId: z.string().nullable(),
     baseInstructions: z.string().optional(),
+    resumeOriginal: z.literal(true).optional(),
+    nativeOverrides: bridgeNativeOverridesSchema.optional(),
   });
 
 export const claudeThreadForkParamsSchema =
@@ -73,12 +85,14 @@ export const claudeThreadForkParamsSchema =
   });
 
 export const claudeTurnStartParamsSchema = z.object({
+  permissionMode: claudePermissionModeSchema.optional(),
   threadId: z.string(),
   providerThreadId: z.string().nullable(),
   input: z.array(z.unknown()),
   model: z.string().optional(),
   reasoningLevel: reasoningLevelSchema.optional(),
   workflowsEnabled: z.boolean().optional(),
+  idleQueryReleaseEnabled: z.boolean().optional(),
   chromeEnabled: z.boolean().optional(),
   memoryEnabled: z.boolean().optional(),
   providerSubagentsEnabled: z.boolean().optional(),

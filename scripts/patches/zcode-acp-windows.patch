@@ -1,0 +1,2162 @@
+diff --git a/README.md b/README.md
+index 343ca14..01f8a33 100644
+--- a/README.md
++++ b/README.md
+@@ -120,7 +120,7 @@ zcode-acp \
+ | `--node` / `ZCODE_ACP_NODE` | Executable to run `zcode.cjs`. | `node` |
+ | `--zcode-args` / `ZCODE_ACP_ZCODE_ARGS` | Extra args appended to every spawn. | (none) |
+ | `--fallback-cwd` / `ZCODE_ACP_FALLBACK_CWD` | `cwd` when a session does not carry one. | process cwd |
+-| `--prompt-timeout-secs` / `ZCODE_ACP_PROMPT_TIMEOUT_SECS` | Hard per-prompt timeout. | `900` |
++| `--prompt-timeout-secs` / `ZCODE_ACP_PROMPT_TIMEOUT_SECS` | Optional total deadline including approval waits. Zero disables it; expiry stops the prompt and reports an error, not user cancellation. | `0` |
+ | `--no-browser` / `ZCODE_ACP_NO_BROWSER` | Disable the OAuth browser flow. | `false` |
+ | `--data-base-dir` / `ZCODE_DATA_BASE_DIR` | Override `~/.zcode` for credentials/config. | `$HOME` |
+ 
+diff --git a/src/acp_translator.rs b/src/acp_translator.rs
+index da3b99d..942547c 100644
+--- a/src/acp_translator.rs
++++ b/src/acp_translator.rs
+@@ -16,6 +16,39 @@ use crate::zcode::protocol::{
+     ToolKind as ZToolKind, ToolUpdatedPayload,
+ };
+ 
++fn tool_diff_content(_input: Option<&Value>, result: Option<&Value>) -> Option<ToolCallContent> {
++    let metadata = result?.get("metadata")?;
++    let display = metadata.get("display")?;
++    if display.get("kind")? != "file_diff" {
++        return None;
++    }
++    if display.get("truncated") == Some(&Value::Bool(true)) {
++        return None;
++    }
++    if let Some(serialization) = metadata.get("serialization") {
++        if serialization.get("truncated") == Some(&Value::Bool(true)) {
++            return None;
++        }
++    }
++    let path = display.get("filePath")?.as_str()?;
++    if path.is_empty() {
++        return None;
++    }
++    let read_state = metadata.get("readFileState")?;
++    if read_state.get("isPartialView") != Some(&Value::Bool(false)) {
++        return None;
++    }
++    let read_path = read_state.get("path")?.as_str()?;
++    if read_path != path {
++        return None;
++    }
++    let new_text = read_state.get("content")?.as_str()?;
++    let hunks = display.get("structuredPatch")?.as_array()?;
++    let old_text = crate::inverse_patch::restore(new_text, hunks)?;
++    let diff = acp::schema::Diff::new(path, new_text).old_text(old_text);
++    Some(ToolCallContent::Diff(diff))
++}
++
+ /// Build the [`SessionUpdate`] for a streamed text/reasoning delta.
+ pub fn part_delta_to_update(delta: &PartDeltaPayload) -> Option<SessionUpdate> {
+     match delta.field.as_deref().unwrap_or("text") {
+@@ -66,11 +99,7 @@ pub fn tool_updated_to_calls(
+     match payload.kind {
+         ZToolKind::Scheduled => {
+             already_announced.insert(id.clone(), ());
+-            let input = payload
+-                .input
+-                .as_ref()
+-                .map(|v| v.to_string())
+-                .unwrap_or_default();
++            let input = payload.input.clone().unwrap_or(Value::Null);
+             let locations = extract_locations(&payload.input);
+             ToolEventTranslation::New(
+                 ToolCall::new(id.clone(), title.clone())
+@@ -82,31 +111,48 @@ pub fn tool_updated_to_calls(
+         ZToolKind::Started => {
+             // First-seen fallback if we missed `scheduled`.
+             if already_announced.insert(id.clone(), ()).is_none() {
+-                let input = payload
+-                    .input
+-                    .as_ref()
+-                    .map(|v| v.to_string())
+-                    .unwrap_or_default();
++                let input = payload.input.clone().unwrap_or(Value::Null);
+                 ToolEventTranslation::New(
+                     ToolCall::new(id.clone(), title)
+                         .raw_input(input)
+                         .kind(tool_kind_for(payload.tool_name.as_deref().unwrap_or(""))),
+                 )
+             } else {
+-                ToolEventTranslation::None
++                let mut fields = ToolCallUpdateFields::new().status(ToolCallStatus::InProgress);
++                if let Some(input) = &payload.input {
++                    fields = fields.raw_input(input.clone());
++                }
++                ToolEventTranslation::Update(ToolCallUpdate::new(id, fields))
+             }
+         }
+         ZToolKind::Result => {
+-            let content = tool_text_content(payload.result.as_ref().and_then(|r| r.get("output")));
++            let diff = tool_diff_content(payload.input.as_ref(), payload.result.as_ref());
++            let content: Vec<ToolCallContent> = match diff {
++                Some(item) => vec![item],
++                None => tool_text_content(payload.result.as_ref().and_then(|r| r.get("content").or_else(|| r.get("output")))),
++            };
++            let status = if payload.result.as_ref().and_then(|result| result.get("success")) == Some(&Value::Bool(false)) {
++                ToolCallStatus::Failed
++            } else { ToolCallStatus::Completed };
++            if already_announced.insert(id.clone(), ()).is_none() {
++                return ToolEventTranslation::New(ToolCall::new(id, title)
++                    .kind(kind).status(status).content(content)
++                    .raw_input(payload.input.clone().unwrap_or(Value::Null))
++                    .locations(extract_locations(&payload.input)));
++            }
+             ToolEventTranslation::Update(ToolCallUpdate::new(
+                 id.clone(),
+                 ToolCallUpdateFields::new()
+-                    .status(ToolCallStatus::Completed)
++                    .status(status)
+                     .content(content),
+             ))
+         }
+         ZToolKind::Error => {
+             let content = tool_text_content(payload.error.as_ref().and_then(|e| e.get("message")));
++            if already_announced.insert(id.clone(), ()).is_none() {
++                return ToolEventTranslation::New(ToolCall::new(id, title)
++                    .kind(kind).status(ToolCallStatus::Failed).content(content));
++            }
+             ToolEventTranslation::Update(ToolCallUpdate::new(
+                 id.clone(),
+                 ToolCallUpdateFields::new()
+@@ -184,7 +230,7 @@ pub struct AcpPermissionRequest {
+     pub tool_call_id: String,
+     pub title: String,
+     pub kind: ToolKind,
+-    pub raw_input: String,
++    pub raw_input: Value,
+     pub options: Vec<AcpPermissionOption>,
+ }
+ 
+@@ -201,11 +247,7 @@ pub fn permission_to_acp(payload: &PermissionPayload) -> AcpPermissionRequest {
+         tool_call_id: payload.tool_call_id.clone(),
+         title: tool_name.clone(),
+         kind: tool_kind_for(&tool_name),
+-        raw_input: payload
+-            .input
+-            .as_ref()
+-            .map(|v| v.to_string())
+-            .unwrap_or_default(),
++        raw_input: payload.input.clone().unwrap_or(Value::Null),
+         options: payload
+             .options
+             .iter()
+@@ -225,10 +267,226 @@ pub fn maybe_plan(_ev: &EventEnvelope) -> Option<acp::schema::SessionUpdate> {
+     None
+ }
+ 
++#[cfg(test)]
++mod diff_tests {
++    use super::*;
++
++    fn result() -> Value {
++        serde_json::json!({"metadata":{
++            "display":{"kind":"file_diff","filePath":"C:\\test\\file.ts","truncated":false,
++                "structuredPatch":[{"oldStart":2,"oldLines":1,"newStart":2,"newLines":1,"lines":["-old","+new"]}]},
++            "readFileState":{"path":"C:\\test\\file.ts","content":"new\nnew\ntail","isPartialView":false}
++        }})
++    }
++
++    #[test]
++    fn emits_complete_exact_file_even_without_tool_input() {
++        let content = tool_diff_content(None, Some(&result())).unwrap();
++        let wire = serde_json::to_value(content).unwrap();
++        assert_eq!(wire["oldText"], "new\nold\ntail");
++        assert_eq!(wire["newText"], "new\nnew\ntail");
++    }
++
++    #[test]
++    fn completed_part_enriches_result_in_either_order_and_rejects_other_session() {
++        for part_first in [true, false] {
++            let mut cache = std::collections::HashMap::new();
++            let envelope = |kind: &str, payload: Value| EventEnvelope {
++                event_id: "event".into(), session_id: "native-session".into(), seq: 1,
++                turn_id: None, timestamp: 0, type_: kind.into(), payload: Some(payload),
++            };
++            let mut part = envelope("part.upserted", serde_json::json!({"part":{
++                "sessionId":"native-session", "callId":"edit-1", "type":"tool", "tool":"Edit",
++                "state":{"status":"completed", "output":"updated", "metadata":result()["metadata"]}
++            }}));
++            let mut foreign = part.clone();
++            foreign.payload.as_mut().unwrap()["part"]["sessionId"] = serde_json::json!("other-session");
++            enrich_completed_edit(&mut foreign, &mut cache);
++            assert_eq!(foreign.type_, "part.upserted");
++            assert!(cache.is_empty());
++            let mut completed = envelope("tool.updated", serde_json::json!({
++                "kind":"result", "toolCallId":"edit-1", "result":{"success":true,"content":"updated","display":result()["metadata"]["display"]}
++            }));
++            if !part_first { enrich_completed_edit(&mut completed, &mut cache); }
++            enrich_completed_edit(&mut part, &mut cache);
++            assert_eq!(part.type_, "tool.updated");
++            if part_first { enrich_completed_edit(&mut completed, &mut cache); }
++            let last = if part_first { completed } else { part };
++            let payload: ToolUpdatedPayload = serde_json::from_value(last.payload.unwrap()).unwrap();
++            let ToolEventTranslation::New(update) = tool_updated_to_calls(&payload, &mut std::collections::HashMap::new()) else { panic!("Expected diff card"); };
++            let wire = serde_json::to_value(update).unwrap();
++            assert_eq!(wire["toolCallId"], "edit-1");
++            assert_eq!(wire["content"][0]["oldText"], "new\nold\ntail");
++            assert_eq!(wire["content"][0]["newText"], "new\nnew\ntail");
++        }
++    }
++
++    #[test]
++    fn result_event_without_input_preserves_metadata_and_call_identity() {
++        let payload: ToolUpdatedPayload = serde_json::from_value(serde_json::json!({
++            "toolCallId": "native-edit-1",
++            "toolName": "Edit",
++            "kind": "result",
++            "result": result()
++        })).unwrap();
++        let mut announced = std::collections::HashMap::new();
++        announced.insert("native-edit-1".to_string(), ());
++        let ToolEventTranslation::Update(update) = tool_updated_to_calls(&payload, &mut announced) else {
++            panic!("Expected an update for the original call");
++        };
++        let wire = serde_json::to_value(update).unwrap();
++        assert_eq!(wire["toolCallId"], "native-edit-1");
++        assert_eq!(wire["status"], "completed");
++        assert_eq!(wire["content"][0]["type"], "diff");
++        assert_eq!(wire["content"][0]["oldText"], "new\nold\ntail");
++        assert_eq!(wire["content"][0]["newText"], "new\nnew\ntail");
++    }
++
++    #[test]
++    fn rejects_partial_truncated_mismatched_and_missing_metadata() {
++        for (field, value) in [
++            ("isPartialView", serde_json::json!(true)),
++            ("path", serde_json::json!("C:\\other.ts")),
++            ("content", serde_json::json!("stale")),
++        ] {
++            let mut data = result();
++            data["metadata"]["readFileState"][field] = value;
++            assert!(tool_diff_content(None, Some(&data)).is_none());
++        }
++        let mut data = result();
++        data["metadata"]["display"]["truncated"] = serde_json::json!(true);
++        assert!(tool_diff_content(None, Some(&data)).is_none());
++        let mut data = result();
++        data["metadata"]["serialization"] = serde_json::json!({"truncated":true});
++        assert!(tool_diff_content(None, Some(&data)).is_none());
++        let mut data = result();
++        data["metadata"]["readFileState"].as_object_mut().unwrap().remove("isPartialView");
++        assert!(tool_diff_content(None, Some(&data)).is_none());
++        assert!(tool_diff_content(None, None).is_none());
++    }
++
++    #[test]
++    fn cached_edit_never_overwrites_native_metadata_or_mismatched_display() {
++        let mut cache = std::collections::HashMap::from([("call-1".to_string(), result())]);
++        for native_metadata in [None, Some(serde_json::json!({"origin":"native"}))] {
++            let mut payload = serde_json::json!({"kind":"result","toolCallId":"call-1","result":{
++                "display": result()["metadata"]["display"]
++            }});
++            if let Some(value) = native_metadata {
++                payload["result"]["metadata"] = value;
++            } else {
++                payload["result"]["display"]["filePath"] = serde_json::json!("C:\\different.txt");
++            }
++            let original = payload.clone();
++            let mut event = EventEnvelope { event_id:"e".into(),session_id:"s".into(),seq:1,
++                turn_id:None,timestamp:0,type_:"tool.updated".into(),payload:Some(payload) };
++            enrich_completed_edit(&mut event, &mut cache);
++            assert_eq!(event.payload.unwrap(), original);
++        }
++    }
++}
++
++pub fn enrich_completed_edit(event: &mut EventEnvelope, results: &mut std::collections::HashMap<String, Value>) {
++    let Some(payload) = event.payload.as_mut() else { return; };
++    if event.type_ == "part.upserted" {
++        let Some(part) = payload.get("part") else { return; };
++        if part.get("sessionId").and_then(Value::as_str) != Some(event.session_id.as_str())
++            || part["type"] != "tool" || part["state"]["status"] != "completed" {
++            return;
++        }
++        let Some(id) = part.get("callId").and_then(Value::as_str).filter(|id| !id.is_empty()) else { return; };
++        let state = &part["state"];
++        let result = serde_json::json!({"metadata": state["metadata"], "content": state["output"]});
++        if tool_diff_content(None, Some(&result)).is_none() { return; }
++        let id = id.to_owned();
++        let translated = serde_json::json!({"kind":"result", "toolCallId":id, "toolName":part["tool"], "result":result});
++        if results.len() >= 256 { results.clear(); }
++        results.insert(id, result);
++        *payload = translated;
++        event.type_ = "tool.updated".to_owned();
++    } else if event.type_ == "tool.updated" && payload["kind"] == "result" {
++        if let Some(result) = payload.get("toolCallId").and_then(Value::as_str).and_then(|id| results.get(id)) {
++            if payload["result"].get("metadata").is_none()
++                && payload["result"]["display"] == result["metadata"]["display"] {
++                payload["result"]["metadata"] = result["metadata"].clone();
++            }
++        }
++    }
++}
++
++pub async fn load_completed_edit(event: &mut EventEnvelope, node: &str, cwd: &std::path::Path) {
++    let Some(payload) = event.payload.as_mut() else { return; };
++    if event.type_ != "tool.updated" || payload["kind"] != "result"
++        || payload["result"]["display"]["kind"] != "file_diff" { return; }
++    let Some(call) = payload.get("toolCallId").and_then(Value::as_str) else { return; };
++    let Ok(executable) = std::env::current_exe() else { return; };
++    let helper = executable.with_file_name("zcode-edit-snapshot.cjs");
++    if !helper.is_file() { return; }
++    let mut command = tokio::process::Command::new(node);
++    command.arg(helper).arg(&event.session_id).arg(call).arg(cwd)
++        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped())
++        .stderr(std::process::Stdio::null()).kill_on_drop(true);
++    #[cfg(windows)]
++    command.creation_flags(0x08000000);
++    let Ok(Ok(output)) = tokio::time::timeout(std::time::Duration::from_secs(2), command.output()).await else { return; };
++    if !output.status.success() || output.stdout.len() > 2_097_152 { return; }
++    let Ok(metadata) = serde_json::from_slice::<Value>(&output.stdout) else { return; };
++    if metadata["display"] != payload["result"]["display"] { return; }
++    let candidate = serde_json::json!({"metadata": metadata});
++    if tool_diff_content(None, Some(&candidate)).is_some() {
++        payload["result"]["metadata"] = candidate["metadata"].clone();
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn terminal_failure_creates_missing_card_then_updates_same_identity() {
++        for result in [true, false] {
++            let payload: ToolUpdatedPayload = serde_json::from_value(serde_json::json!({
++                "kind": if result { "result" } else { "error" }, "toolCallId":"failed-call", "toolName":"Bash",
++                "result":{"success":false,"content":"command failed"}, "error":{"message":"command failed"}
++            })).unwrap();
++            let mut seen = std::collections::HashMap::new();
++            let ToolEventTranslation::New(card) = tool_updated_to_calls(&payload, &mut seen) else { panic!("Missing terminal card"); };
++            let wire = serde_json::to_value(card).unwrap();
++            assert_eq!(wire["status"], "failed");
++            assert_eq!(wire["toolCallId"], "failed-call");
++            assert!(matches!(tool_updated_to_calls(&payload, &mut seen), ToolEventTranslation::Update(_)));
++        }
++    }
++
++    #[test]
++    fn native_app_server_result_preserves_command_output() {
++        let payload: ToolUpdatedPayload = serde_json::from_value(serde_json::json!({
++            "toolCallId": "call_7b97345d015e438f9e9befab",
++            "kind": "result",
++            "duration": 20,
++            "result": {"success": true, "content": "/c/Source/bb-windows/.runtime/native-roundtrip/glm189-1239"}
++        })).unwrap();
++        let ToolEventTranslation::New(update) = tool_updated_to_calls(&payload, &mut std::collections::HashMap::new()) else {
++            panic!("Expected command result");
++        };
++        let wire = serde_json::to_value(update).unwrap();
++        assert_eq!(wire["toolCallId"], "call_7b97345d015e438f9e9befab");
++        assert_eq!(wire["content"][0]["content"]["text"], "/c/Source/bb-windows/.runtime/native-roundtrip/glm189-1239");
++    }
++
++    #[test]
++    fn permission_preserves_structured_command_input() {
++        let input = serde_json::json!({"command": "git status --short", "cwd": "C:\\Source\\bb-windows"});
++        let payload: PermissionPayload = serde_json::from_value(serde_json::json!({
++            "toolCallId": "call-1", "toolName": "Bash", "riskLevel": "low",
++            "reason": "inspect", "input": input, "options": []
++        })).unwrap();
++        let request = permission_to_acp(&payload);
++        let update = ToolCallUpdateFields::new().raw_input(request.raw_input);
++        let wire = serde_json::to_value(update).unwrap();
++        assert_eq!(wire["rawInput"], input);
++    }
++
+     #[test]
+     fn text_delta_maps_to_agent_message_chunk() {
+         let delta = PartDeltaPayload {
+@@ -274,10 +532,19 @@ mod tests {
+             stdout_tail: None,
+             stderr_tail: None,
+         };
+-        assert!(matches!(
+-            tool_updated_to_calls(&scheduled, &mut seen),
+-            ToolEventTranslation::New(_)
+-        ));
++        match tool_updated_to_calls(&scheduled, &mut seen) {
++            ToolEventTranslation::New(call) => assert_eq!(serde_json::to_value(call).unwrap()["rawInput"], scheduled.input.clone().unwrap()),
++            _ => panic!("expected scheduled call"),
++        }
++        let started = ToolUpdatedPayload { kind: ZToolKind::Started, ..scheduled.clone() };
++        match tool_updated_to_calls(&started, &mut seen) {
++            ToolEventTranslation::Update(update) => assert_eq!(serde_json::to_value(update.fields).unwrap()["rawInput"], scheduled.input.clone().unwrap()),
++            _ => panic!("expected started update"),
++        }
++        match tool_updated_to_calls(&started, &mut std::collections::HashMap::new()) {
++            ToolEventTranslation::New(call) => assert_eq!(serde_json::to_value(call).unwrap()["rawInput"], scheduled.input.clone().unwrap()),
++            _ => panic!("expected started fallback"),
++        }
+         let result = ToolUpdatedPayload {
+             kind: ZToolKind::Result,
+             result: Some(serde_json::json!({ "output": "file.txt" })),
+diff --git a/src/agent.rs b/src/agent.rs
+index 4e11f76..f80aabf 100644
+--- a/src/agent.rs
++++ b/src/agent.rs
+@@ -28,7 +28,7 @@ use tokio::sync::Mutex;
+ use crate::RunConfig;
+ use crate::acp_translator;
+ use crate::zcode::{
+-    SessionCommand, SessionConfig, SessionMessage, TurnError, ZcodeSession, auth, protocol as zp,
++    SessionCommand, SessionConfig, SessionMessage, ZcodeSession, auth, protocol as zp,
+ };
+ 
+ /// Auth-method identifiers we advertise (mirrors codex-acp's multi-method set,
+@@ -46,6 +46,7 @@ pub struct ZcodeAgent {
+ 
+ /// One ACP session = one ZCode `app-server` subprocess.
+ struct SessionEntry {
++    settings: Mutex<serde_json::Value>,
+     /// Sender into the driver; used for stop/close/send commands. The driver
+     /// itself (and the transport) are owned by the pump task below.
+     cmd: tokio::sync::mpsc::UnboundedSender<SessionCommand>,
+@@ -81,6 +82,19 @@ impl ZcodeAgent {
+         acp::Agent
+             .builder()
+             .name("zcode-acp")
++            .on_receive_request(
++                {
++                    let agent = agent.clone();
++                    async move |request: acp::schema::SetSessionConfigOptionRequest, responder, cx: ConnectionTo<Client>| {
++                        let agent = agent.clone();
++                        cx.spawn(async move {
++                            responder.respond_with_result(agent.set_config(request).await)
++                        })?;
++                        Ok(())
++                    }
++                },
++                acp::on_receive_request!(),
++            )
+             // initialize
+             .on_receive_request(
+                 {
+@@ -232,7 +246,7 @@ impl ZcodeAgent {
+ 
+     async fn initialize(&self, _req: InitializeRequest) -> Result<InitializeResponse> {
+         let caps = AgentCapabilities::new()
+-            .prompt_capabilities(PromptCapabilities::new().embedded_context(true).image(true))
++            .prompt_capabilities(PromptCapabilities::new().image(true))
+             .load_session(true)
+             .auth(AgentAuthCapabilities::new().logout(LogoutCapabilities::new()))
+             .session_capabilities(
+@@ -278,15 +292,20 @@ impl ZcodeAgent {
+ 
+         tracing::info!(?cwd, mcp_count = mcp_servers.len(), "session/new");
+ 
+-        let zcode = ZcodeSession::start(self.session_cfg(), &cwd, mcp_servers, None, None)
++        let model = std::env::var("ZCODE_ACP_MODEL").ok().map(|value| {
++            let (provider_id, model_id) = value.split_once('/').unwrap_or(("zai", &value));
++            zp::ModelRef { provider_id: provider_id.into(), model_id: model_id.into(), variant: None }
++        });
++        let zcode = ZcodeSession::start(self.session_cfg(), &cwd, mcp_servers.clone(), Some("build".into()), model)
+             .await
+             .map_err(map_session_error)?;
+ 
+-        let session_id = SessionId::new(uuid::Uuid::new_v4().to_string());
+-        let entry = self.spawn_pump(session_id.clone(), zcode, cx);
++        let session_id = SessionId::new(zcode.zcode_session_id.clone());
++        let options = session_config_options(&zcode.settings)?;
++        let entry = self.spawn_pump(session_id.clone(), zcode, cx, cwd);
+         self.sessions.lock().await.insert(session_id.clone(), entry);
+ 
+-        Ok(NewSessionResponse::new(session_id).modes(self.session_modes()))
++        Ok(NewSessionResponse::new(session_id).modes(self.session_modes()).config_options(options))
+     }
+ 
+     async fn load_session(
+@@ -304,15 +323,41 @@ impl ZcodeAgent {
+         };
+         tracing::info!(%zcode_sid, "session/load");
+ 
+-        let zcode = ZcodeSession::resume(self.session_cfg(), &cwd, zcode_sid)
++        let mcp_servers = req.mcp_servers.iter().map(|s| serde_json::to_value(s).unwrap_or(serde_json::Value::Null)).collect::<Vec<_>>();
++        let zcode = ZcodeSession::resume(self.session_cfg(), &cwd, zcode_sid, mcp_servers.clone())
+             .await
+             .map_err(map_session_error)?;
+ 
+-        let session_id = SessionId::new(uuid::Uuid::new_v4().to_string());
+-        let entry = self.spawn_pump(session_id.clone(), zcode, cx);
++        let session_id = req.session_id.clone();
++        let options = session_config_options(&zcode.settings)?;
++        let entry = self.spawn_pump(session_id.clone(), zcode, cx, cwd);
+         self.sessions.lock().await.insert(session_id, entry);
+ 
+-        Ok(LoadSessionResponse::new().modes(self.session_modes()))
++        Ok(LoadSessionResponse::new().modes(self.session_modes()).config_options(options))
++    }
++
++    async fn set_config(self: Arc<Self>, req: acp::schema::SetSessionConfigOptionRequest) -> Result<acp::schema::SetSessionConfigOptionResponse> {
++        let entry = self.sessions.lock().await.get(&req.session_id).cloned()
++            .ok_or_else(|| Error::invalid_params().data("Unknown session"))?;
++        let raw = serde_json::to_value(&req).map_err(|_| Error::invalid_params())?;
++        let value = raw["value"].as_str().ok_or_else(Error::invalid_params)?;
++        let mut settings = entry.settings.lock().await;
++        let options = session_config_options(&settings)?;
++        let valid = serde_json::to_value(&options).map_err(|_| Error::internal_error())?;
++        if !valid.as_array().into_iter().flatten().any(|option| option["id"] == req.config_id.to_string() && option["options"].as_array().into_iter().flatten().any(|item| item["value"] == value)) {
++            return Err(Error::invalid_params().data("Unsupported model or reasoning level"));
++        }
++        let (reply, rx) = tokio::sync::oneshot::channel();
++        let command = match req.config_id.to_string().as_str() {
++            "model" => SessionCommand::SetModel { model: value.into(), reply },
++            "thought_level" => SessionCommand::SetThoughtLevel { level: value.into(), reply },
++            _ => return Err(Error::invalid_params()),
++        };
++        entry.cmd.send(command).map_err(|_| Error::internal_error())?;
++        let response = rx.await.map_err(|_| Error::internal_error())?
++            .map_err(|e| Error::internal_error().data(e))?;
++        *settings = response["settings"].clone();
++        Ok(acp::schema::SetSessionConfigOptionResponse::new(session_config_options(&settings)?))
+     }
+ 
+     async fn list_sessions(self: Arc<Self>) -> Result<ListSessionsResponse> {
+@@ -327,9 +372,16 @@ impl ZcodeAgent {
+         _cx: ConnectionTo<Client>,
+     ) -> Result<SetSessionModeResponse> {
+         let mode_id = req.mode_id.to_string();
+-        tracing::info!(%mode_id, "session/setMode (deferred to next prompt)");
+-        // ZCode mode is forwarded on the next session/send via the driver; we
+-        // do not currently mutate the live session's mode mid-flight.
++        if !["plan", "build", "edit", "yolo"].contains(&mode_id.as_str()) {
++            return Err(Error::invalid_params().data("Unsupported mode"));
++        }
++        let entry = self.sessions.lock().await.get(&req.session_id).cloned()
++            .ok_or_else(|| Error::invalid_params().data("Unknown session"))?;
++        let (reply, result) = tokio::sync::oneshot::channel();
++        entry.cmd.send(SessionCommand::SetMode { mode: mode_id, reply })
++            .map_err(|_| Error::internal_error().data("Session closed"))?;
++        result.await.map_err(|_| Error::internal_error().data("Session closed"))?
++            .map_err(|e| Error::internal_error().data(e))?;
+         Ok(SetSessionModeResponse::new())
+     }
+ 
+@@ -434,18 +486,20 @@ impl ZcodeAgent {
+     ) -> Result<PromptResponse> {
+         let session_id = req.session_id.clone();
+ 
+-        let entry = {
++        let existing = {
+             let sessions = self.sessions.lock().await;
+             sessions
+                 .get(&session_id)
+                 .cloned()
+-                .ok_or_else(|| Error::resource_not_found(None))?
+         };
++        let entry = existing.ok_or_else(|| Error::resource_not_found(None))?;
+ 
+-        // Flatten the prompt's content blocks into a single string. Non-text
+-        // blocks are dropped (image support would require ZCode attachments).
+         let prompt_text = collect_prompt_text(&req.prompt);
+-        if prompt_text.trim().is_empty() {
++        let attachments = collect_prompt_images(&req.prompt)?;
++        if !attachments.is_empty() && !entry.settings.lock().await["model"]["current"]["modelId"].as_str().is_some_and(|id| id.eq_ignore_ascii_case("glm-5.3-flash")) {
++            return Err(Error::invalid_params().data("Для отправки картинки выберите GLM-5.3-Flash. GLM-5.3 не поддерживает изображения."));
++        }
++        if prompt_text.trim().is_empty() && attachments.is_empty() {
+             return Ok(PromptResponse::new(StopReason::EndTurn));
+         }
+ 
+@@ -458,28 +512,24 @@ impl ZcodeAgent {
+         let (tx, rx) = tokio::sync::oneshot::channel();
+         let _ = entry.cmd.send(SessionCommand::Send {
+             text: prompt_text,
++            attachments,
+             reply: tx,
+         });
+ 
+-        let timeout = std::time::Duration::from_secs(self.cfg.options.prompt_timeout_secs);
+-        match tokio::time::timeout(timeout, rx).await {
++        match await_prompt(self.cfg.options.prompt_timeout_secs, rx).await {
+             Ok(Ok(Ok(outcome))) => Ok(PromptResponse::new(map_stop_reason(outcome.stop_reason))),
+             Ok(Ok(Err(e))) => {
+                 tracing::warn!(?session_id, "turn failed: {e}");
+-                let stop = match e {
+-                    TurnError::Transport(_) => StopReason::Cancelled,
+-                    _ => StopReason::EndTurn,
+-                };
+                 let _ = cx.send_notification(acp::schema::SessionNotification::new(
+                     session_id.clone(),
+                     SessionUpdate::AgentMessageChunk(ContentChunk::new(format!("⚠️ {e}\n").into())),
+                 ));
+-                Ok(PromptResponse::new(stop))
++                Err(prompt_error(&e))
+             }
+             Ok(Err(_)) => Err(Error::internal_error().data("prompt channel closed")),
+             Err(_) => {
+                 let _ = entry.cmd.send(SessionCommand::Stop);
+-                Ok(PromptResponse::new(StopReason::Cancelled))
++                Err(Error::internal_error().data(format!("ZCode prompt exceeded the configured {} second deadline", self.cfg.options.prompt_timeout_secs)))
+             }
+         }
+     }
+@@ -495,21 +545,58 @@ impl ZcodeAgent {
+         session_id: SessionId,
+         mut zcode: ZcodeSession,
+         cx: ConnectionTo<Client>,
++        cwd: std::path::PathBuf,
+     ) -> Arc<SessionEntry> {
+         // Clone the command sender before moving the session into the pump.
+         let cmd = zcode.command_sender();
++        let settings = Mutex::new(zcode.settings.clone());
++        let usage_reader = zcode.usage.clone();
+         let sid = session_id.clone();
++        let node = self.cfg.node.clone();
+         let pump = tokio::spawn(async move {
+             let mut announced_tools: HashMap<String, ()> = HashMap::new();
++            let mut permission_requests: HashMap<String, serde_json::Value> = HashMap::new();
++            let mut streamed_inputs: HashMap<String, serde_json::Value> = HashMap::new();
++            let mut completed_edits: HashMap<String, serde_json::Value> = HashMap::new();
+             while let Some(msg) = zcode.events.recv().await {
+                 match msg {
+-                    SessionMessage::Event(ev) => {
++                    SessionMessage::Event(mut ev) => {
++                        acp_translator::load_completed_edit(&mut ev, &node, &cwd).await;
++                        acp_translator::enrich_completed_edit(&mut ev, &mut completed_edits);
++                        if let Some(payload) = ev.payload.as_mut() {
++                            restore_streamed_tool_input(&ev.type_, payload, &mut streamed_inputs);
++                        }
++                        if ev.type_ == "turn.completed" {
++                            // Read the authoritative per-call context sample
++                            // off the pump: a bounded `session/read` snapshot
++                            // with `messageLimit: 1`. Unknown shapes emit no
++                            // usage update at all.
++                            let reader = usage_reader.clone();
++                            let notify_cx = cx.clone();
++                            let notify_sid = sid.clone();
++                            tokio::spawn(async move {
++                                if let Some(sample) = reader.read().await {
++                                    let _ = notify_cx.send_notification(
++                                        acp::schema::SessionNotification::new(
++                                            notify_sid,
++                                            SessionUpdate::UsageUpdate(UsageUpdate::new(
++                                                sample.used_tokens,
++                                                sample.window_tokens,
++                                            )),
++                                        ),
++                                    );
++                                }
++                            });
++                        }
+                         forward_event(&sid, &cx, &ev, &mut announced_tools);
+                     }
+                     SessionMessage::TurnEnded {
+                         outcome,
+                         completion,
+                     } => {
++                        permission_requests.clear();
++                        streamed_inputs.clear();
++                        completed_edits.clear();
+                         // All preceding events have already been forwarded
+                         // (the channel is FIFO), so it is now safe to resolve
+                         // the prompt's completion.
+@@ -523,6 +610,9 @@ impl ZcodeAgent {
+                         params,
+                         reply_tx,
+                     } => {
++                        if is_permission_reannouncement(&mut permission_requests, &method, &params) {
++                            continue;
++                        }
+                         handle_server_request(&sid, &cx, id, &method, &params, reply_tx);
+                     }
+                     SessionMessage::Closed(reason) => {
+@@ -532,7 +622,7 @@ impl ZcodeAgent {
+                 }
+             }
+         });
+-        Arc::new(SessionEntry { cmd, pump })
++        Arc::new(SessionEntry { cmd, pump, settings })
+     }
+ 
+     /// Build the `modes` payload advertising ZCode's plan/build/edit/yolo modes.
+@@ -546,11 +636,33 @@ impl ZcodeAgent {
+         .into_iter()
+         .map(|(id, name)| SessionMode::new(id, name))
+         .collect();
+-        SessionModeState::new(SessionModeId::new("yolo"), modes)
++        SessionModeState::new(SessionModeId::new("build"), modes)
+     }
+ }
+ 
+ /// Translate a ZCode event into one or more ACP `session/update` notifications.
++fn restore_streamed_tool_input(event: &str, payload: &mut serde_json::Value, inputs: &mut HashMap<String, serde_json::Value>) {
++    let Some(id) = payload.get("toolCallId").and_then(serde_json::Value::as_str).map(str::to_owned) else { return; };
++    if event == "model.streaming" && payload["kind"] == "tool_call" {
++        if let Some(input) = payload.get("input") {
++            if inputs.len() >= 256 { inputs.clear(); }
++            inputs.insert(id, input.clone());
++        }
++    } else if event == "tool.updated" && payload["kind"] == "scheduled" {
++        if let Some(input) = inputs.remove(&id) {
++            if payload.get("input").is_none() { payload["input"] = input; }
++        }
++    }
++}
++
++async fn await_prompt<F: std::future::Future>(seconds: u64, future: F) -> Result<F::Output, tokio::time::error::Elapsed> {
++    if seconds == 0 {
++        Ok(future.await)
++    } else {
++        tokio::time::timeout(std::time::Duration::from_secs(seconds), future).await
++    }
++}
++
+ fn forward_event(
+     session_id: &SessionId,
+     cx: &ConnectionTo<Client>,
+@@ -605,33 +717,11 @@ fn forward_event(
+             }
+         }
+         "turn.completed" => {
+-            // ZCode's usage payload uses inputTokens/outputTokens/totalTokens
+-            // (and cacheReadTokens), not the `total`/`context_window` keys we
+-            // used to look for. We forward totalTokens as `used`; the context
+-            // window comes from the model catalog rather than the usage event,
+-            // so we fall back to a generous default when it isn't reported.
+-            if let Some(p) = &ev.payload
+-                && let Ok(c) = serde_json::from_value::<zp::TurnCompletedPayload>(p.clone())
+-                && let Some(u) = c.usage.as_ref()
+-            {
+-                let used = u
+-                    .get("totalTokens")
+-                    .or_else(|| u.get("total"))
+-                    .and_then(|v| v.as_u64());
+-                let window = u
+-                    .get("contextWindow")
+-                    .or_else(|| u.get("context_window"))
+-                    .and_then(|v| v.as_u64());
+-                if let Some(used) = used {
+-                    let _ = cx.send_notification(acp::schema::SessionNotification::new(
+-                        session_id.clone(),
+-                        SessionUpdate::UsageUpdate(UsageUpdate::new(
+-                            used,
+-                            window.unwrap_or(1_000_000),
+-                        )),
+-                    ));
+-                }
+-            }
++            // The turn-level usage payload is a SUM over every model call of
++            // the turn, not the current context occupancy, so it must not be
++            // forwarded as a usage sample. The authoritative per-call sample
++            // is read from the `session/read` snapshot by the pump task (see
++            // `spawn_pump`), off this synchronous forward path.
+         }
+         _ => {}
+     }
+@@ -644,6 +734,24 @@ fn forward_event(
+ /// This is synchronous because the actual ACP request is dispatched via
+ /// `SentRequest::on_receiving_result` (a callback registration), not awaited
+ /// inline — awaiting inside the pump would deadlock the event loop.
++fn is_permission_reannouncement(
++    seen: &mut HashMap<String, serde_json::Value>,
++    method: &str,
++    params: &serde_json::Value,
++) -> bool {
++    if method != "interaction/requestPermission" {
++        return false;
++    }
++    let Some(request_id) = params.get("requestId").and_then(|v| v.as_str()).filter(|id| !id.is_empty()) else {
++        return false;
++    };
++    if seen.get(request_id) == Some(params) {
++        return true;
++    }
++    seen.insert(request_id.to_owned(), params.clone());
++    false
++}
++
+ fn handle_server_request(
+     session_id: &SessionId,
+     cx: &ConnectionTo<Client>,
+@@ -653,6 +761,9 @@ fn handle_server_request(
+     reply_tx: tokio::sync::oneshot::Sender<serde_json::Value>,
+ ) {
+     match method {
++        "session/requestRuntimePreferences" => {
++            let _ = reply_tx.send(serde_json::json!({"nativeSearchEnhancementsEnabled":false,"memoryEnabled":false,"askUserQuestionAutoResolutionEnabled":false}));
++        }
+         "interaction/requestPermission" => {
+             let req = match serde_json::from_value::<zp::PermissionPayload>(params.clone()) {
+                 Ok(r) => r,
+@@ -671,6 +782,7 @@ fn handle_server_request(
+                 ToolCallUpdateFields::new()
+                     .title(acp_req.title.clone())
+                     .kind(acp_req.kind)
++                    .raw_input(acp_req.raw_input.clone())
+                     .status(ToolCallStatus::Pending),
+             );
+ 
+@@ -748,6 +860,54 @@ fn handle_server_request(
+ }
+ 
+ /// Concatenate the text of every `ContentBlock::Text` in a prompt.
++fn session_config_options(settings: &serde_json::Value) -> Result<Vec<acp::schema::SessionConfigOption>> {
++    use serde_json::json;
++    let current = &settings["model"]["current"];
++    let Some(model_id) = current["modelId"].as_str() else { return Ok(vec![]); };
++    let provider = current["providerId"].as_str().unwrap_or("zai");
++    let models = settings["model"]["available"].as_array().into_iter().flatten()
++        .filter(|m| m["ref"]["providerId"] == provider)
++        .filter_map(|m| m["ref"]["modelId"].as_str())
++        .map(|id| json!({"value":format!("{provider}/{id}"),"name":id.replacen("glm-", "GLM-", 1).replace("-flash", "-Flash")})).collect::<Vec<_>>();
++    let mut options = vec![json!({"id":"model","name":"Model","category":"model","type":"select","currentValue":format!("{provider}/{model_id}"),"options":models})];
++    let thought = &settings["thoughtLevel"];
++    if thought["enabled"] == true {
++        let levels = thought["available"].as_array().into_iter().flatten()
++            .filter_map(|l| l["value"].as_str())
++            .map(|level| json!({"value":level,"name":match level {"max"=>"Max","high"=>"High","low"=>"Low",other=>other}})).collect::<Vec<_>>();
++        options.push(json!({"id":"thought_level","name":"Reasoning","category":"thought_level","type":"select","currentValue":thought.get("current").or_else(|| thought.get("defaultLevel")),"options":levels}));
++    }
++    serde_json::from_value(json!(options)).map_err(|_| Error::internal_error().data("Invalid native model settings"))
++}
++
++fn collect_prompt_images(blocks: &[ContentBlock]) -> Result<Vec<zp::ImageAttachment>> {
++    use base64::Engine;
++    let mut images = Vec::new();
++    let mut bytes = 0;
++    for block in blocks {
++        if let ContentBlock::Image(image) = block {
++            if !matches!(image.mime_type.as_str(), "image/png" | "image/jpeg" | "image/webp" | "image/gif") {
++                return Err(Error::invalid_params().data("Supported image formats: PNG, JPEG, WebP, GIF"));
++            }
++            if image.data.len() > 14 * 1024 * 1024 {
++                return Err(Error::invalid_params().data("Image exceeds 10 MiB"));
++            }
++            let decoded = base64::engine::general_purpose::STANDARD.decode(&image.data)
++                .map_err(|_| Error::invalid_params().data("Invalid image base64"))?;
++            if decoded.is_empty() || decoded.len() > 10 * 1024 * 1024 {
++                return Err(Error::invalid_params().data("Image must contain 1 byte to 10 MiB"));
++            }
++            bytes += decoded.len();
++            if bytes > 20 * 1024 * 1024 || images.len() >= 8 {
++                return Err(Error::invalid_params().data("At most 8 images and 20 MiB per message"));
++            }
++            let extension = match image.mime_type.as_str() { "image/jpeg" => "jpg", "image/webp" => "webp", "image/gif" => "gif", _ => "png" };
++            images.push(zp::ImageAttachment::Image { data_base64: image.data.clone(), mime_type: image.mime_type.clone(), filename: format!("attachment-{}.{}", images.len() + 1, extension), size_bytes: decoded.len() });
++        }
++    }
++    Ok(images)
++}
++
+ fn collect_prompt_text(blocks: &[ContentBlock]) -> String {
+     let mut out = String::new();
+     for block in blocks {
+@@ -783,6 +943,17 @@ fn map_auth_error(e: auth::AuthError) -> Error {
+     Error::internal_error().data(format!("{}: {e}", e.reason_code()))
+ }
+ 
++/// Stable wire marker the bb ACP bridge matches to attach a typed
++/// `rateLimited` recovery hint. Mirrors the authRequired prefix convention.
++pub const RATE_LIMITED_MESSAGE_PREFIX: &str = "ZCODE_RATE_LIMITED";
++
++fn prompt_error(e: &crate::zcode::TurnError) -> Error {
++    if let crate::zcode::TurnError::RateLimited(message) = e {
++        return Error::new(-32000, format!("{RATE_LIMITED_MESSAGE_PREFIX}: {message}"));
++    }
++    Error::internal_error().data(e.to_string())
++}
++
+ fn map_stop_reason(r: zp::StopReason) -> StopReason {
+     match r {
+         zp::StopReason::EndTurn => StopReason::EndTurn,
+@@ -794,8 +965,82 @@ fn map_stop_reason(r: zp::StopReason) -> StopReason {
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++    use serde_json::json;
++
++    #[test]
++    fn rate_limited_turn_maps_to_the_stable_wire_marker() {
++        let error = prompt_error(&crate::zcode::TurnError::RateLimited(
++            "Insufficient balance (1308)".into(),
++        ));
++        assert_eq!(i32::from(error.code), -32000);
++        assert!(error.message.starts_with("ZCODE_RATE_LIMITED:"));
++        assert!(error.message.contains("1308"));
++    }
++
++    #[test]
++    fn other_turn_errors_keep_the_internal_error_shape() {
++        let error = prompt_error(&crate::zcode::TurnError::Failed("boom".into()));
++        assert_eq!(i32::from(error.code), -32603);
++        assert!(!error.message.starts_with("ZCODE_RATE_LIMITED"));
++    }
++
++    #[test]
++    fn restores_input_omitted_by_native_stream_deduplication() {
++        let mut inputs = HashMap::new();
++        let mut stream = json!({"kind":"tool_call","toolCallId":"one","input":{"command":"git status"}});
++        restore_streamed_tool_input("model.streaming", &mut stream, &mut inputs);
++        let mut scheduled = json!({"kind":"scheduled","toolCallId":"one","inputOmitted":true,"inputRef":"model_stream"});
++        restore_streamed_tool_input("tool.updated", &mut scheduled, &mut inputs);
++        assert_eq!(scheduled["input"]["command"], "git status");
++        assert!(inputs.is_empty());
++        restore_streamed_tool_input("model.streaming", &mut stream, &mut inputs);
++        let mut explicit = json!({"kind":"scheduled","toolCallId":"one","input":{"command":"git diff"}});
++        restore_streamed_tool_input("tool.updated", &mut explicit, &mut inputs);
++        assert_eq!(explicit["input"]["command"], "git diff");
++    }
++
++    #[tokio::test]
++    async fn optional_prompt_deadline_preserves_completion_and_channel_failure() {
++        let (tx, rx) = tokio::sync::oneshot::channel();
++        tokio::spawn(async move {
++            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
++            tx.send(42).unwrap();
++        });
++        assert_eq!(await_prompt(0, rx).await.unwrap().unwrap(), 42);
++        assert_eq!(await_prompt(1, async { 7 }).await.unwrap(), 7);
++        assert!(await_prompt(1, std::future::pending::<()>()).await.is_err());
++        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
++        drop(tx);
++        assert!(await_prompt(0, rx).await.unwrap().is_err());
++    }
++
++    #[test]
++    fn permission_reannouncements_do_not_create_another_approval() {
++        let mut seen = HashMap::new();
++        let params = serde_json::json!({"requestId":"approval-1","toolCallId":"write-1","input":{"content":"hello"}});
++        assert!(!is_permission_reannouncement(&mut seen, "interaction/requestPermission", &params));
++        assert!(is_permission_reannouncement(&mut seen, "interaction/requestPermission", &params));
++        let changed = serde_json::json!({"requestId":"approval-2","toolCallId":"write-1","input":{"content":"different"}});
++        assert!(!is_permission_reannouncement(&mut seen, "interaction/requestPermission", &changed));
++        assert!(!is_permission_reannouncement(&mut seen, "session/requestRuntimePreferences", &params));
++        seen.clear();
++        assert!(!is_permission_reannouncement(&mut seen, "interaction/requestPermission", &params));
++    }
+     use acp::schema::TextContent;
+ 
++    #[test]
++    fn native_catalog_keeps_models_and_reasoning_separate() {
++        let settings = serde_json::json!({
++            "model":{"current":{"providerId":"zai","modelId":"glm-5.3"},"available":[{"ref":{"providerId":"zai","modelId":"glm-5.3"}},{"ref":{"providerId":"zai","modelId":"GLM-5.3-Flash"}}]},
++            "thoughtLevel":{"enabled":true,"current":"max","available":[{"value":"low"},{"value":"high"},{"value":"max"}]}
++        });
++        let options = serde_json::to_value(session_config_options(&settings).unwrap()).unwrap();
++        assert_eq!(options[0]["options"][1]["name"], "GLM-5.3-Flash");
++        assert_eq!(options[1]["currentValue"], "max");
++        assert_eq!(options[1]["options"].as_array().unwrap().len(), 3);
++        assert!(session_config_options(&serde_json::Value::Null).unwrap().is_empty());
++    }
++
+     #[test]
+     fn collect_prompt_text_concatenates_text_blocks() {
+         let blocks = vec![
+@@ -804,4 +1049,23 @@ mod tests {
+         ];
+         assert_eq!(collect_prompt_text(&blocks), "hello\nworld");
+     }
++
++    #[test]
++    fn images_are_sent_inline_and_not_replaced_with_paths() {
++        let image: ContentBlock = serde_json::from_value(serde_json::json!({"type":"image","data":"aGVsbG8=","mimeType":"image/png"})).unwrap();
++        let attachments = collect_prompt_images(&[image.clone(), image]).unwrap();
++        let wire = serde_json::to_value(attachments).unwrap();
++        assert_eq!(wire.as_array().unwrap().len(), 2);
++        assert_eq!(wire[0], serde_json::json!({"kind":"image","dataBase64":"aGVsbG8=","mimeType":"image/png","filename":"attachment-1.png","sizeBytes":5}));
++    }
++
++    #[test]
++    fn invalid_images_are_rejected_not_silently_dropped() {
++        for (mime, data) in [("image/svg+xml", "aGVsbG8="), ("image/png", "not base64"), ("image/png", "")] {
++            let image: ContentBlock = serde_json::from_value(serde_json::json!({"type":"image","data":data,"mimeType":mime})).unwrap();
++            assert!(collect_prompt_images(&[image]).is_err());
++        }
++        let image: ContentBlock = serde_json::from_value(serde_json::json!({"type":"image","data":"aGVsbG8=","mimeType":"image/png"})).unwrap();
++        assert!(collect_prompt_images(&vec![image; 9]).is_err());
++    }
+ }
+diff --git a/src/lib.rs b/src/lib.rs
+index b890684..05ba63e 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -24,6 +24,7 @@
+ //! See `src/main.rs` for the binary entry point.
+ 
+ pub mod acp_translator;
++mod inverse_patch;
+ pub mod agent;
+ pub mod zcode;
+ 
+@@ -38,9 +39,7 @@ pub use agent::ZcodeAgent;
+ /// Tunables exposed via the CLI that are not about locating ZCode itself.
+ #[derive(Args, Debug, Clone)]
+ pub struct CliOptions {
+-    /// Per-prompt hard timeout in seconds. If a turn exceeds it, the active
+-    /// ZCode prompt is stopped and the turn ends with `StopReason::Cancelled`.
+-    #[arg(long, env = "ZCODE_ACP_PROMPT_TIMEOUT_SECS", default_value_t = 900)]
++    #[arg(long, env = "ZCODE_ACP_PROMPT_TIMEOUT_SECS", default_value_t = 0, help = "Optional total prompt deadline in seconds, including approvals; 0 disables it. Expiry stops the prompt and reports an error.")]
+     pub prompt_timeout_secs: u64,
+ 
+     /// Disable interactive OAuth (browser/device flow). When set, the adapter
+diff --git a/src/main.rs b/src/main.rs
+index 6beaf97..8b125f6 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -63,7 +63,7 @@ fn main() -> ExitCode {
+     };
+     // Resolve to an absolute path now: app-server subprocesses are spawned with
+     // the session's cwd, so a relative --zcode-path would break once we chdir.
+-    let zcode_path = match zcode_path.canonicalize() {
++    let zcode_path = match std::path::absolute(&zcode_path) {
+         Ok(abs) => abs,
+         Err(_) => zcode_path,
+     };
+diff --git a/src/zcode/mod.rs b/src/zcode/mod.rs
+index 7963959..29c79f1 100644
+--- a/src/zcode/mod.rs
++++ b/src/zcode/mod.rs
+@@ -49,17 +49,52 @@ pub struct SessionConfig {
+ 
+ /// A live ZCode session backed by one `app-server` subprocess.
+ pub struct ZcodeSession {
++    pub settings: Value,
+     /// The ZCode `sessionId` returned by `session/create` / `session/resume`.
+     pub zcode_session_id: String,
+     /// Sender into which the reader task pushes every event/notification and
+     /// every server→client interaction request. The ACP layer consumes this.
+     pub events: mpsc::UnboundedReceiver<SessionMessage>,
+-    /// Commands the ACP layer sends back (send/stop/close/answer).
++    /// Commands the ACP layer sends back (send/stop/answer).
+     pub cmd_tx: mpsc::UnboundedSender<SessionCommand>,
++    /// Cheap handle for reading the native context-usage snapshot.
++    pub usage: UsageReader,
+     /// Handle on the driver task so we can abort it on close.
+     driver: JoinHandle<()>,
+ }
+ 
++/// Read-only view over the driver state that performs the bounded
++/// `session/read` snapshot request for the current context occupancy.
++/// It shares the driver's request channel, so it never touches the command
++/// loop and cannot delay Send/Stop/steer handling.
++#[derive(Clone)]
++pub struct UsageReader {
++    state: Arc<Mutex<DriverState>>,
++}
++
++impl UsageReader {
++    /// Request the authoritative per-call context sample with a bounded
++    /// timeout and `messageLimit: 1` (no unbounded dialog read). Unknown or
++    /// malformed snapshot shapes yield `None` — never a synthesized value.
++    pub async fn read(&self) -> Option<protocol::UsageSample> {
++        let (rx, epoch) = {
++            let mut s = self.state.lock().await;
++            let params = json!({"sessionId": s.zcode_session_id, "messageLimit": 1});
++            (s.request(protocol::methods::SESSION_READ, params).ok()?, s.usage_epoch)
++        };
++        let result = tokio::time::timeout(
++            std::time::Duration::from_millis(2_000),
++            rx,
++        )
++        .await;
++        let mut state = self.state.lock().await;
++        state.pending.retain(|_, sender| !sender.is_closed());
++        if state.usage_epoch != epoch { return None; }
++        let value = result.ok()?.ok()?.ok()?;
++        protocol::usage_from_snapshot(&value)
++    }
++}
++
+ /// What flows out of a session to the ACP layer.
+ pub enum SessionMessage {
+     /// A `session/event` notification (the streaming channel). Must be
+@@ -89,10 +124,14 @@ pub enum SessionMessage {
+ /// Commands the ACP layer sends into the session driver.
+ #[derive(Debug)]
+ pub enum SessionCommand {
++    SetModel { model: String, reply: oneshot::Sender<Result<Value, String>> },
++    SetThoughtLevel { level: String, reply: oneshot::Sender<Result<Value, String>> },
++    SetMode { mode: String, reply: oneshot::Sender<Result<(), String>> },
+     /// Send a prompt and subscribe to events. The receiver is fulfilled when
+     /// the turn ends (`turn.completed` / `turn.failed`).
+     Send {
+         text: String,
++        attachments: Vec<protocol::ImageAttachment>,
+         reply: oneshot::Sender<Result<TurnOutcome, TurnError>>,
+     },
+     /// `session/stop` the active turn.
+@@ -122,6 +161,8 @@ pub enum TurnError {
+     Transport(String),
+     #[error("rpc error {code}: {message}")]
+     Rpc { code: i64, message: String },
++    #[error("rate limit reached: {0}")]
++    RateLimited(String),
+ }
+ 
+ impl ZcodeSession {
+@@ -171,8 +212,9 @@ impl ZcodeSession {
+         cfg: SessionConfig,
+         cwd: &Path,
+         zcode_session_id: String,
++        mcp_servers: Vec<Value>,
+     ) -> Result<Self, SessionError> {
+-        let params = json!({ "sessionId": zcode_session_id });
++        let params = json!({ "sessionId": zcode_session_id, "mcpServers": mcp_servers });
+         build_session(cfg, cwd, methods::SESSION_RESUME, params).await
+     }
+ 
+@@ -204,6 +246,9 @@ impl ZcodeSession {
+ 
+ /// Shared, lock-protected driver state.
+ struct DriverState {
++    usage_epoch: u64,
++    passport: ProcessPassport,
++    runtime_model: Value,
+     write_tx: mpsc::UnboundedSender<Value>,
+     id_src: Arc<IdSource>,
+     zcode_session_id: String,
+@@ -214,6 +259,8 @@ struct DriverState {
+ }
+ 
+ struct ActiveTurn {
++    generation: Arc<()>,
++    cancel_requested: bool,
+     /// Resolved on turn.completed/failed.
+     completion: Option<oneshot::Sender<Result<TurnOutcome, TurnError>>>,
+     #[allow(dead_code)]
+@@ -254,7 +301,9 @@ impl DriverState {
+                 }
+             }
+             Some(Incoming::Notification { method, params }) => {
+-                if method == methods::SESSION_EVENT {
++                if method == "process/mcpTelemetry" {
++                    if let Some(params) = params { self.passport.mcp_startup(&params); }
++                } else if method == methods::SESSION_EVENT {
+                     if let Some(p) = params
+                         && let Ok(ev) = serde_json::from_value::<protocol::EventEnvelope>(p.clone())
+                     {
+@@ -324,26 +373,30 @@ impl DriverState {
+                         .and_then(|c| c.response)
+                 });
+                 self.end_turn(Ok(TurnOutcome {
+-                    stop_reason: protocol::StopReason::EndTurn,
++                    stop_reason: if self.active_turn.as_ref().is_some_and(|turn| turn.cancel_requested) { protocol::StopReason::Cancelled } else { protocol::StopReason::EndTurn },
+                     final_text: text,
+                 }));
+             }
+             "turn.failed" => {
+-                let msg = ev
++                if self.active_turn.as_ref().is_some_and(|turn| turn.cancel_requested) {
++                    self.end_turn(Ok(TurnOutcome { stop_reason: protocol::StopReason::Cancelled, final_text: None }));
++                    return;
++                }
++                let failure = ev
+                     .payload
+                     .as_ref()
+                     .and_then(|p| {
+                         serde_json::from_value::<protocol::TurnFailedPayload>(p.clone()).ok()
+-                    })
+-                    .and_then(|f| {
+-                        f.error.as_ref().and_then(|e| {
+-                            e.get("message")
+-                                .and_then(|m| m.as_str())
+-                                .map(str::to_string)
+-                        })
+-                    })
++                    });
++                let error = failure.as_ref().and_then(|f| f.error.as_ref());
++                let msg = error
++                    .map(protocol::provider_error_message)
+                     .unwrap_or_else(|| "turn failed".into());
+-                self.end_turn(Err(TurnError::Failed(msg)));
++                let classified = match error.map(protocol::provider_error_code) {
++                    Some(Some(protocol::GLM_RATE_LIMIT_ERROR_CODE)) => TurnError::RateLimited(msg),
++                    _ => TurnError::Failed(msg),
++                };
++                self.end_turn(Err(classified));
+             }
+             _ => {}
+         }
+@@ -354,6 +407,7 @@ impl DriverState {
+     /// forwarded to the ACP host. This preserves ordering for callers waiting
+     /// on `session/prompt`'s reply.
+     fn end_turn(&mut self, outcome: std::result::Result<TurnOutcome, TurnError>) {
++        self.passport.update("state", json!(if outcome.is_ok() { "idle" } else { "failed" }));
+         if let Some(mut t) = self.active_turn.take() {
+             let completion = t.completion.take();
+             let _ = self.events_tx.send(SessionMessage::TurnEnded {
+@@ -365,6 +419,7 @@ impl DriverState {
+ 
+     /// Used by the EOF path (no chance to order against in-flight events).
+     fn fail_active_turn(&mut self, err: TurnError) {
++        self.passport.update("state", json!("failed"));
+         if let Some(mut t) = self.active_turn.take()
+             && let Some(tx) = t.completion.take()
+         {
+@@ -388,6 +443,8 @@ async fn run_dispatcher(
+         .events_tx
+         .send(SessionMessage::Closed("app-server EOF".into()));
+     s.fail_active_turn(TurnError::Transport("app-server EOF".into()));
++    s.pending.clear();
++    s.passport.update("state", json!("exited"));
+ }
+ 
+ /// Run the command loop: handle Send/Stop/Answer/Close from the ACP layer.
+@@ -396,12 +453,61 @@ async fn run_command_loop(
+     mut cmd_rx: mpsc::UnboundedReceiver<SessionCommand>,
+ ) {
+     while let Some(cmd) = cmd_rx.recv().await {
++        {
++            let mut s = state.lock().await;
++            s.usage_epoch = s.usage_epoch.wrapping_add(1);
++        }
+         match cmd {
+-            SessionCommand::Send { text, reply } => {
+-                handle_send(state.clone(), text, reply).await;
++            SessionCommand::SetModel { model, reply } => {
++                let result = if let Some((provider_id, model_id)) = model.split_once('/') {
++                    let mut runtime = state.lock().await.runtime_model.clone();
++                    runtime["model"] = json!({"providerId":provider_id,"modelId":model_id});
++                    let result = session_request(&state, "session/setModel", json!({"model":runtime["model"],"runtimeModel":runtime,"persistAsWorkspaceLastUsed":false})).await;
++                    if result.is_ok() {
++                        let mut s = state.lock().await;
++                        s.runtime_model = runtime;
++                        s.passport.update("model", json!(model));
++                    }
++                    result
++                } else { Err("Model must be provider/model".into()) };
++                let runtime = state.lock().await.runtime_model.clone();
++                let _ = reply.send(result.map(|mut result| { enrich_model_settings(&mut result["settings"], &runtime); result }));
++            }
++            SessionCommand::SetThoughtLevel { level, reply } => {
++                let result = session_request(&state, "session/setThoughtLevel", json!({"thoughtLevel":level,"persistAsWorkspaceLastUsed":false})).await;
++                if result.is_ok() { state.lock().await.passport.update("reasoning", json!(level)); }
++                let runtime = state.lock().await.runtime_model.clone();
++                let _ = reply.send(result.map(|mut result| { enrich_model_settings(&mut result["settings"], &runtime); result }));
++            }
++            SessionCommand::SetMode { mode, reply } => {
++                let request = {
++                    let mut s = state.lock().await;
++                    let session_id = s.zcode_session_id.clone();
++                    s.request(methods::SESSION_SET_MODE, json!({"sessionId":session_id,"mode":mode}))
++                };
++                let result = match request {
++                    Ok(rx) => match rx.await {
++                        Ok(Ok(_)) => Ok(()),
++                        Ok(Err(e)) => Err(e.to_string()),
++                        Err(e) => Err(e.to_string()),
++                    },
++                    Err(e) => Err(e),
++                };
++                let _ = reply.send(result);
++            }
++            SessionCommand::Send { text, attachments, reply } => {
++                handle_send(state.clone(), text, attachments, reply).await;
+             }
+             SessionCommand::Stop => {
+-                handle_request_void(state.clone(), methods::SESSION_STOP).await;
++                if let Some(turn) = state.lock().await.active_turn.as_mut() {
++                    turn.cancel_requested = true;
++                }
++                let result = session_request(&state, methods::SESSION_STOP, json!({})).await;
++                let mut s = state.lock().await;
++                match result {
++                    Ok(_) => {},
++                    Err(error) => s.end_turn(Err(TurnError::Transport(error))),
++                }
+             }
+             SessionCommand::AnswerPermission { id, response } => {
+                 let val = json!({
+@@ -425,8 +531,15 @@ async fn run_command_loop(
+ async fn handle_send(
+     state: Arc<Mutex<DriverState>>,
+     text: String,
++    attachments: Vec<protocol::ImageAttachment>,
+     reply: oneshot::Sender<Result<TurnOutcome, TurnError>>,
+ ) {
++    let text = if text.starts_with("<system_instructions>\n") {
++        match session_request(&state, methods::SESSION_MESSAGES, json!({})).await {
++            Ok(history) => without_duplicate_instructions(&text, &history).to_string(),
++            Err(_) => text,
++        }
++    } else { text };
+     // Subscribe once, then send. We release the lock between sending the
+     // request and awaiting its response so the dispatcher can run.
+     let sub_rx = {
+@@ -453,43 +566,48 @@ async fn handle_send(
+         let _ = rx.await; // ignore subscribe result
+     }
+ 
++    let generation = Arc::new(());
+     let send_outcome = {
+         let mut s = state.lock().await;
++        s.passport.update("state", json!("running"));
++        s.active_turn = Some(ActiveTurn {
++            generation: generation.clone(),
++            cancel_requested: false,
++            completion: Some(reply),
++            accumulated_text: String::new(),
++            announced_tools: HashMap::new(),
++        });
+         let send_params = serde_json::to_value(&SendParams {
+             session_id: s.zcode_session_id.clone(),
+             content: text,
++            attachments,
+             input_id: None,
+             query_id: None,
+         })
+         .unwrap();
+         s.request(methods::SESSION_SEND, send_params)
+     };
+-    match send_outcome {
++    tokio::spawn(async move {
++    let failure = match send_outcome {
+         Ok(rx) => match rx.await {
+-            Ok(Ok(_)) => {
+-                let mut s = state.lock().await;
+-                s.active_turn = Some(ActiveTurn {
+-                    completion: Some(reply),
+-                    accumulated_text: String::new(),
+-                    announced_tools: HashMap::new(),
+-                });
+-            }
+-            Ok(Err(rpc)) => {
+-                let _ = reply.send(Err(TurnError::Rpc {
++            Ok(Ok(_)) => None,
++            Ok(Err(rpc)) => Some(TurnError::Rpc {
+                     code: rpc.code,
+                     message: rpc.message,
+-                }));
+-            }
+-            Err(_) => {
+-                let _ = reply.send(Err(TurnError::Transport(
++                }),
++            Err(_) => Some(TurnError::Transport(
+                     "session/send channel closed".into(),
+-                )));
+-            }
++                )),
+         },
+-        Err(e) => {
+-            let _ = reply.send(Err(TurnError::Transport(e)));
++        Err(e) => Some(TurnError::Transport(e)),
++    };
++    if let Some(error) = failure {
++        let mut s = state.lock().await;
++        if s.active_turn.as_ref().is_some_and(|turn| Arc::ptr_eq(&turn.generation, &generation)) {
++            s.fail_active_turn(error);
+         }
+     }
++    });
+ }
+ 
+ /// Fire a one-shot request whose response we discard (stop/close).
+@@ -524,7 +642,7 @@ fn spawn_io(
+     let (write_tx, mut write_rx) = mpsc::unbounded_channel::<Value>();
+ 
+     // Reader task: read framed messages from stdout until EOF.
+-    tokio::spawn(async move {
++    let mut reader_task = tokio::spawn(async move {
+         let mut reader = stdout;
+         loop {
+             match read_line_incoming(&mut reader).await {
+@@ -547,9 +665,32 @@ fn spawn_io(
+         use tokio::io::AsyncWriteExt;
+         let mut writer = stdin;
+         let mut child = child;
+-        while let Some(v) = write_rx.recv().await {
++        loop {
++            let v = tokio::select! {
++                status = child.wait() => {
++                    tracing::warn!(target: "zcode::writer", ?status, "app-server process exited");
++                    if tokio::time::timeout(std::time::Duration::from_millis(250), &mut reader_task).await.is_err() {
++                        reader_task.abort();
++                        let _ = (&mut reader_task).await;
++                    }
++                    break;
++                }
++                value = write_rx.recv() => match value {
++                    Some(value) => value,
++                    None => break,
++                },
++            };
+             if v.is_null() {
+                 let _ = writer.shutdown().await;
++                #[cfg(windows)]
++                if let Some(pid) = child.id() {
++                    let _ = tokio::process::Command::new("taskkill.exe")
++                        .args(["/PID", &pid.to_string(), "/T", "/F"])
++                        .creation_flags(0x08000000)
++                        .stdout(std::process::Stdio::null())
++                        .stderr(std::process::Stdio::null())
++                        .status().await;
++                }
+                 let _ = child.start_kill();
+                 let _ = tokio::time::timeout(std::time::Duration::from_secs(2), child.wait()).await;
+                 break;
+@@ -566,6 +707,7 @@ fn spawn_io(
+                 break;
+             }
+         }
++        reader_task.abort();
+     });
+ 
+     (incoming_rx, write_tx)
+@@ -620,10 +762,31 @@ pub async fn build_session(
+     cfg: SessionConfig,
+     cwd: &Path,
+     initial_method: &str,
+-    initial_params: Value,
++    mut initial_params: Value,
+ ) -> Result<ZcodeSession, SessionError> {
++    if let Ok(path) = std::env::var("ZCODE_ACP_CONFIG_PATH") {
++        let raw = std::fs::read_to_string(path).map_err(|_| SessionError::Protocol("Cannot read ZCode config".into()))?;
++        let config: Value = serde_json::from_str(&raw).map_err(|_| SessionError::Protocol("Invalid ZCode config".into()))?;
++        let model = std::env::var("ZCODE_ACP_MODEL").map_err(|_| SessionError::Protocol("ZCODE_ACP_MODEL required with config path".into()))?;
++        let (provider_id, model_id) = model.split_once('/').ok_or_else(|| SessionError::Protocol("Model must be provider/model".into()))?;
++        let provider = &config["provider"][provider_id];
++        let kind = provider["kind"].as_str().ok_or_else(|| SessionError::Protocol("Provider kind missing".into()))?;
++        let base_url = provider["options"]["baseURL"].as_str().ok_or_else(|| SessionError::Protocol("Provider URL missing".into()))?;
++        let api_key = provider["options"]["apiKey"].as_str().ok_or_else(|| SessionError::Protocol("Provider API key missing".into()))?;
++        let models = provider["models"].as_object().into_iter().flat_map(|m| m.keys())
++            .filter(|id| matches!(id.to_ascii_lowercase().as_str(), "glm-5.3" | "glm-5.3-flash"))
++            .map(|id| configured_model_capabilities(id, &provider["models"][id])).collect::<Vec<_>>();
++        initial_params["runtimeModel"] = json!({
++            "revision":"bb-zcode-v1", "generatedAt": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
++            "model":{"providerId":provider_id,"modelId":model_id},
++            "provider":{"providerId":provider_id,"kind":kind,"baseURL":base_url,"apiKey":{"source":"inline","value":api_key},"models":models}
++        });
++    }
++    let runtime_model = initial_params.get("runtimeModel").cloned().unwrap_or(Value::Null);
+     let transport = transport::spawn(&cfg.node, &cfg.zcode_path, cwd, &cfg.extra_args)
+         .map_err(SessionError::Spawn)?;
++    let native_pid = transport.child.id();
++    let native_created = process_created(&transport.child);
+     let id_src = Arc::new(IdSource::default());
+     let (mut incoming_rx, write_tx) = spawn_io(transport);
+ 
+@@ -640,6 +803,7 @@ pub async fn build_session(
+         .send(msg)
+         .map_err(|e| SessionError::Send(e.to_string()))?;
+ 
++    let mut mcp_startup = Value::Null;
+     let result_value = loop {
+         match incoming_rx.recv().await {
+             Some(raw) => match raw.classify() {
+@@ -647,6 +811,17 @@ pub async fn build_session(
+                     protocol::ResponseResult::Ok(v) => break v,
+                     protocol::ResponseResult::Err(e) => return Err(SessionError::CreateFailed(e)),
+                 },
++                Some(Incoming::ServerRequest { id, method, .. }) => {
++                    let response = if method == "session/requestRuntimePreferences" {
++                        json!({"id":id,"result":{"nativeSearchEnhancementsEnabled":false,"memoryEnabled":false,"askUserQuestionAutoResolutionEnabled":false}})
++                    } else {
++                        json!({"id":id,"error":{"code":-32601,"message":"Unsupported client request"}})
++                    };
++                    write_tx.send(response).map_err(|e| SessionError::Send(e.to_string()))?;
++                }
++                Some(Incoming::Notification { method, params }) if method == "process/mcpTelemetry" => {
++                    if let Some(params) = params && params["kind"] == "session_startup" { mcp_startup = params; }
++                }
+                 _ => continue,
+             },
+             None => return Err(SessionError::TransportClosed),
+@@ -664,7 +839,12 @@ pub async fn build_session(
+     let (events_tx, events_rx) = mpsc::unbounded_channel();
+     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+ 
++    let mut passport = ProcessPassport::new(&zcode_session_id, cwd, native_pid, native_created, &runtime_model, &result_value);
++    passport.mcp_startup(&mcp_startup);
+     let state = Arc::new(Mutex::new(DriverState {
++        usage_epoch: 0,
++        passport,
++        runtime_model: runtime_model.clone(),
+         write_tx: write_tx.clone(),
+         id_src,
+         zcode_session_id: zcode_session_id.clone(),
+@@ -685,7 +865,11 @@ pub async fn build_session(
+         let _ = (disp, cmd);
+     });
+ 
++    let mut settings = result_value.get("settings").cloned().unwrap_or(Value::Null);
++    enrich_model_settings(&mut settings, &runtime_model);
+     Ok(ZcodeSession {
++        settings,
++        usage: UsageReader { state: state.clone() },
+         zcode_session_id,
+         events: events_rx,
+         cmd_tx,
+@@ -693,6 +877,424 @@ pub async fn build_session(
+     })
+ }
+ 
++fn configured_model_capabilities(id: &str, configured: &Value) -> Value {
++    let mut model = json!({"modelId":id,"supportsImages":id.eq_ignore_ascii_case("glm-5.3-flash")});
++    if let Some(window) = configured.get("contextWindow").and_then(Value::as_u64).filter(|window| *window > 0 && *window <= 9_007_199_254_740_991) {
++        model["contextWindow"] = json!(window);
++    }
++    model
++}
++
++#[cfg(test)]
++mod model_capability_tests {
++    use super::*;
++
++    #[test]
++    fn unknown_window_is_not_replaced_with_a_fabricated_million() {
++        for configured in [json!({}), json!({"contextWindow":0}), json!({"contextWindow":-1}), json!({"contextWindow":"1000000"})] {
++            assert!(configured_model_capabilities("glm-5.3", &configured).get("contextWindow").is_none());
++        }
++        assert_eq!(configured_model_capabilities("glm-5.3", &json!({"contextWindow":128000}))["contextWindow"], 128000);
++    }
++}
++
++fn unix_ms() -> u64 {
++    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64
++}
++
++#[cfg(windows)]
++fn process_created(child: &tokio::process::Child) -> Option<String> {
++    #[repr(C)]
++    #[derive(Default)]
++    struct FileTime { low: u32, high: u32 }
++    #[link(name = "kernel32")]
++    unsafe extern "system" {
++        fn GetProcessTimes(handle: *mut std::ffi::c_void, creation: *mut FileTime, exit: *mut FileTime, kernel: *mut FileTime, user: *mut FileTime) -> i32;
++    }
++    let handle = child.raw_handle()?;
++    let (mut creation, mut exit, mut kernel, mut user) = (FileTime::default(), FileTime::default(), FileTime::default(), FileTime::default());
++    if unsafe { GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user) } == 0 { return None; }
++    Some((((creation.high as u64) << 32) | creation.low as u64).to_string())
++}
++
++#[cfg(not(windows))]
++fn process_created(_: &tokio::process::Child) -> Option<String> { None }
++
++struct ProcessPassport { path: Option<PathBuf>, data: Value }
++
++impl ProcessPassport {
++    fn mcp_startup(&mut self, value: &Value) {
++        if value["sessionId"] == self.data["sessionId"] && value["kind"] == "session_startup" {
++            self.update("mcp", sanitize_mcp(value));
++        }
++    }
++    fn new(session: &str, cwd: &Path, pid: Option<u32>, created: Option<String>, runtime: &Value, result: &Value) -> Self {
++        let path = std::env::var_os("ZCODE_ACP_CONFIG_PATH").map(PathBuf::from)
++            .and_then(|p| p.parent().map(|p| p.join("bb-status")))
++            .filter(|_| session.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'))
++            .map(|p| p.join(format!("{session}.jsonl")));
++        let mut passport = Self { path, data: json!({
++            "version":1,"threadId":std::env::var("BB_THREAD_ID").ok(),"sessionId":session,
++            "adapterPid":std::process::id(),"nativePid":pid,"nativeCreatedFileTime":created,
++            "startedAtUnixMs":unix_ms(),"cwd":cwd,
++            "model":format!("{}/{}",runtime["model"]["providerId"].as_str().unwrap_or("unknown"),runtime["model"]["modelId"].as_str().unwrap_or("unknown")),
++            "reasoning":result["settings"]["thoughtLevel"]["current"],
++            "mcp":{"check":"not_checked"},"state":"idle"
++        }) };
++        passport.update("state", json!("idle"));
++        passport
++    }
++
++    fn update(&mut self, key: &str, value: Value) {
++        self.data[key] = value;
++        self.data["updatedAtUnixMs"] = json!(unix_ms());
++        let Some(path) = &self.path else { return; };
++        let write = || -> std::io::Result<()> {
++            use std::io::Write;
++            if let Some(parent) = path.parent() { std::fs::create_dir_all(parent)?; }
++            let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
++            let mut record = serde_json::to_vec(&self.data)?;
++            record.push(b'\n');
++            file.write_all(&record)
++        };
++        if write().is_err() { tracing::warn!("Cannot save ZCode process passport"); }
++    }
++}
++
++fn sanitize_mcp(value: &Value) -> Value {
++    let mut report = json!({"check":"startup_snapshot","source":"process/mcpTelemetry","checkedAtUnixMs":unix_ms()});
++    for field in ["configuredCount","connectedCount","failedCount","processCount","occurredAt"] {
++        let Some(count) = value[field].as_u64() else {
++            return json!({"check":"invalid_response","checkedAtUnixMs":unix_ms()});
++        };
++        report[field] = json!(count);
++    }
++    report
++}
++
++fn enrich_model_settings(settings: &mut Value, runtime: &Value) {
++    if let Some(models) = runtime["provider"]["models"].as_array() {
++        settings["model"]["available"] = json!(models.iter().map(|m| json!({"ref":{"providerId":runtime["provider"]["providerId"],"modelId":m["modelId"]}})).collect::<Vec<_>>());
++    }
++}
++
++async fn session_request(state: &Arc<Mutex<DriverState>>, method: &str, mut params: Value) -> Result<Value, String> {
++    let rx = {
++        let mut s = state.lock().await;
++        params["sessionId"] = json!(s.zcode_session_id);
++        s.request(method, params)?
++    };
++    tokio::time::timeout(std::time::Duration::from_secs(15), rx).await
++        .map_err(|_| "Native session request timed out".to_string())?
++        .map_err(|e| e.to_string())?.map_err(|e| e.to_string())
++}
++
++fn instruction_prefix(text: &str) -> Option<&str> {
++    if !text.starts_with("<system_instructions>\n") { return None; }
++    let end = text.find("\n</system_instructions>\n")? + "\n</system_instructions>\n".len();
++    Some(&text[..end])
++}
++
++fn without_duplicate_instructions<'a>(text: &'a str, history: &Value) -> &'a str {
++    let Some(prefix) = instruction_prefix(text) else { return text; };
++    let Some(messages) = history.get("messages").and_then(Value::as_array) else { return text; };
++    let previous = messages.iter().rev()
++        .filter(|m| m["info"]["role"] == "user")
++        .filter_map(|m| m.get("parts").and_then(Value::as_array))
++        .flat_map(|parts| parts.iter().rev())
++        .filter(|part| part["type"] == "text")
++        .filter_map(|part| part.get("text").and_then(Value::as_str))
++        .find_map(instruction_prefix);
++    if previous == Some(prefix) { &text[prefix.len()..] } else { text }
++}
++
++#[cfg(test)]
++mod rate_limit_tests {
++    use super::*;
++
++    fn failed_event(code: Option<i64>, message: &str) -> protocol::EventEnvelope {
++        let error = match code {
++            Some(c) => json!({"code": c, "message": message}),
++            None => json!({"message": message}),
++        };
++        protocol::EventEnvelope {
++            event_id: "failed".into(),
++            session_id: "test-session".into(),
++            seq: 1,
++            turn_id: None,
++            timestamp: 0,
++            type_: "turn.failed".into(),
++            payload: Some(json!({"error": error})),
++        }
++    }
++
++    async fn failing_turn_outcome(ev: protocol::EventEnvelope) -> TurnError {
++        let (write_tx, _writes) = mpsc::unbounded_channel();
++        let (events_tx, mut events) = mpsc::unbounded_channel();
++        let (completion, _result) = oneshot::channel();
++        let state = Arc::new(Mutex::new(DriverState {
++            passport: ProcessPassport { path: None, data: json!({}) },
++            runtime_model: Value::Null, write_tx, id_src: Arc::new(IdSource::default()),
++            zcode_session_id: "test-session".into(), pending: HashMap::new(),
++            active_turn: Some(ActiveTurn { generation: Arc::new(()), cancel_requested: false, completion: Some(completion), accumulated_text: String::new(), announced_tools: HashMap::new() }),
++            events_tx, subscribed: true, usage_epoch: 0,
++        }));
++        state.lock().await.handle_event(ev);
++        match tokio::time::timeout(std::time::Duration::from_secs(2), events.recv())
++            .await
++            .expect("turn ended event")
++            .expect("channel open")
++        {
++            SessionMessage::TurnEnded { outcome: Err(e), .. } => e,
++            _ => panic!("expected failed turn"),
++        }
++    }
++
++    #[tokio::test]
++    async fn provider_error_1308_is_classified_as_rate_limited() {
++        let outcome = failing_turn_outcome(failed_event(
++            Some(protocol::GLM_RATE_LIMIT_ERROR_CODE),
++            "Insufficient balance (1308)",
++        ))
++        .await;
++        assert!(
++            matches!(outcome, TurnError::RateLimited(ref m) if m.contains("1308")),
++            "outcome: {outcome:?}"
++        );
++    }
++
++    #[tokio::test]
++    async fn other_provider_errors_stay_generic_failures() {
++        let code = failing_turn_outcome(failed_event(Some(1309), "server sad")).await;
++        assert!(matches!(code, TurnError::Failed(ref m) if m == "server sad"));
++        let no_code = failing_turn_outcome(failed_event(None, "plain failure")).await;
++        assert!(matches!(no_code, TurnError::Failed(ref m) if m == "plain failure"));
++    }
++}
++
++#[cfg(test)]
++mod usage_snapshot_tests {
++    use super::*;
++
++    #[tokio::test]
++    #[ignore]
++    async fn live_saved_session_snapshot_without_inference() {
++        let cwd = PathBuf::from("C:/workspace/bb-example/.runtime/native-roundtrip/zcode-0312");
++        let session = ZcodeSession::resume(SessionConfig {
++            zcode_path: PathBuf::from("C:/Program Files/ZCode/resources/glm/zcode.cjs"),
++            node: "C:/Program Files/nodejs/node.exe".into(),
++            extra_args: vec![],
++            fallback_cwd: cwd.clone(),
++        }, &cwd, "sess_25a0aa7e-42bd-4120-86e4-6544a753ccbb".into(), vec![]).await.unwrap();
++        let sample = session.usage.read().await;
++        session.command(SessionCommand::Close);
++        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
++        session.abort();
++        let sample = sample.expect("native snapshot must contain context sample");
++        assert_eq!(sample.window_tokens, 1_000_000);
++        assert!(sample.used_tokens > 0 && sample.used_tokens < 100_000, "sample: {sample:?}");
++    }
++    use super::protocol::usage_from_snapshot;
++
++    #[test]
++    fn reads_projection_context_sample() {
++        let snapshot = serde_json::json!({
++            "messages": [{"role": "user"}],
++            "projection": {
++                "sessionId": "sess-1",
++                "status": "idle",
++                "contextUsed": 474030,
++                "contextWindow": 1000000,
++                "totalTokenCount": 9000000,
++                "turnCount": 42
++            },
++            "runtime": {},
++            "session": {},
++            "settings": {}
++        });
++        let sample = usage_from_snapshot(&snapshot).expect("sample");
++        assert_eq!(sample.used_tokens, 474030);
++        assert_eq!(sample.window_tokens, 1_000_000);
++    }
++
++    #[test]
++    fn missing_projection_yields_no_sample() {
++        let snapshot = serde_json::json!({"messages": [], "runtime": {}});
++        assert!(usage_from_snapshot(&snapshot).is_none());
++    }
++
++    #[test]
++    fn zero_or_missing_window_yields_no_sample() {
++        let zero = serde_json::json!({"projection": {"contextUsed": 10, "contextWindow": 0}});
++        assert!(usage_from_snapshot(&zero).is_none());
++        let missing = serde_json::json!({"projection": {"contextUsed": 10}});
++        assert!(usage_from_snapshot(&missing).is_none());
++    }
++
++    #[test]
++    fn turn_aggregate_without_projection_yields_no_sample() {
++        let aggregate = serde_json::json!({
++            "usage": {"totalTokens": 946227, "inputTokens": 900000, "outputTokens": 46227}
++        });
++        assert!(usage_from_snapshot(&aggregate).is_none());
++    }
++
++    async fn exercise_usage_reader(stale: bool, timeout: bool) {
++        let (write_tx, mut writes) = mpsc::unbounded_channel();
++        let (events_tx, _events) = mpsc::unbounded_channel();
++        let state = Arc::new(Mutex::new(DriverState {
++            usage_epoch: 0,
++            passport: ProcessPassport { path: None, data: json!({}) },
++            runtime_model: Value::Null, write_tx, id_src: Arc::new(IdSource::default()),
++            zcode_session_id: "test-session".into(), pending: HashMap::new(),
++            active_turn: None,
++            events_tx, subscribed: true,
++        }));
++        let reader = UsageReader { state: state.clone() };
++        let read_task = tokio::spawn(async move { reader.read().await });
++        let request = tokio::time::timeout(
++            std::time::Duration::from_secs(2),
++            writes.recv(),
++        )
++        .await
++        .expect("request written")
++        .expect("channel open");
++        assert_eq!(request["method"], "session/read");
++        assert_eq!(request["params"]["sessionId"], "test-session");
++        assert_eq!(request["params"]["messageLimit"], 1);
++        if timeout {
++            assert!(read_task.await.unwrap().is_none());
++            assert!(state.lock().await.pending.is_empty());
++            return;
++        }
++        if stale { state.lock().await.usage_epoch += 1; }
++        let id: RequestId = serde_json::from_value(request["id"].clone()).unwrap();
++        state
++            .lock()
++            .await
++            .pending
++            .remove(&id)
++            .unwrap()
++            .send(Ok(json!({
++                "projection": {"contextUsed": 474030, "contextWindow": 1000000}
++            })))
++            .unwrap();
++        let sample = tokio::time::timeout(
++            std::time::Duration::from_secs(2),
++            read_task,
++        )
++        .await
++        .expect("task finished")
++        .expect("join ok");
++        if stale {
++            assert!(sample.is_none());
++            return;
++        }
++        let sample = sample.expect("sample");
++        assert_eq!(sample.used_tokens, 474030);
++        assert_eq!(sample.window_tokens, 1_000_000);
++    }
++
++    #[tokio::test]
++    async fn usage_reader_requests_session_read_with_message_limit_one() {
++        exercise_usage_reader(false, false).await;
++    }
++
++    #[tokio::test]
++    async fn usage_reader_discards_sample_after_new_command() {
++        exercise_usage_reader(true, false).await;
++    }
++
++    #[tokio::test]
++    async fn usage_reader_removes_timed_out_request() {
++        exercise_usage_reader(false, true).await;
++    }
++}
++
++#[cfg(test)]
++mod instruction_tests {
++    use super::*;
++
++    #[tokio::test]
++    async fn stop_cancels_turn_without_closing_transport() {
++        let (write_tx, mut writes) = mpsc::unbounded_channel();
++        let (events_tx, mut events) = mpsc::unbounded_channel();
++        let (completion, _result) = oneshot::channel();
++        let state = Arc::new(Mutex::new(DriverState {
++            usage_epoch: 0,
++            passport: ProcessPassport { path: None, data: json!({}) },
++            runtime_model: Value::Null, write_tx, id_src: Arc::new(IdSource::default()),
++            zcode_session_id: "test-session".into(), pending: HashMap::new(),
++            active_turn: Some(ActiveTurn { generation: Arc::new(()), cancel_requested: false, completion: Some(completion), accumulated_text: String::new(), announced_tools: HashMap::new() }),
++            events_tx, subscribed: true,
++        }));
++        let (commands, rx) = mpsc::unbounded_channel();
++        let driver = tokio::spawn(run_command_loop(state.clone(), rx));
++        let (next_completion, _next_result) = oneshot::channel();
++        commands.send(SessionCommand::Send { text: "pending send".into(), attachments: vec![], reply: next_completion }).unwrap();
++        let send_request = tokio::time::timeout(std::time::Duration::from_secs(2), writes.recv()).await.unwrap().unwrap();
++        assert_eq!(send_request["method"], "session/send");
++        commands.send(SessionCommand::Stop).unwrap();
++        let request = tokio::time::timeout(std::time::Duration::from_secs(2), writes.recv()).await.unwrap().unwrap();
++        assert_eq!(request["method"], "session/stop");
++        assert_eq!(request["params"]["sessionId"], "test-session");
++        let id: RequestId = serde_json::from_value(request["id"].clone()).unwrap();
++        state.lock().await.pending.remove(&id).unwrap().send(Ok(json!({}))).unwrap();
++        tokio::task::yield_now().await;
++        assert!(events.try_recv().is_err());
++        state.lock().await.handle_event(protocol::EventEnvelope {
++            event_id: "completed".into(), session_id: "test-session".into(), seq: 1,
++            turn_id: None, timestamp: 0, type_: "turn.completed".into(), payload: None,
++        });
++        let event = tokio::time::timeout(std::time::Duration::from_secs(2), events.recv()).await.unwrap().unwrap();
++        assert!(matches!(event, SessionMessage::TurnEnded { outcome: Ok(TurnOutcome { stop_reason: protocol::StopReason::Cancelled, .. }), .. }));
++        assert!(!driver.is_finished());
++        assert!(writes.try_recv().is_err());
++        let send_id: RequestId = serde_json::from_value(send_request["id"].clone()).unwrap();
++        state.lock().await.pending.remove(&send_id).unwrap().send(Ok(json!({}))).unwrap();
++        drop(commands);
++        driver.await.unwrap();
++    }
++
++    #[tokio::test]
++    async fn process_exit_closes_transport_with_inherited_stdout() {
++        let mut child = tokio::process::Command::new("node")
++            .args(["-e", "require('child_process').spawn(process.execPath,['-e','setTimeout(()=>{},2000)'],{stdio:['ignore',1,'ignore'],detached:true}).unref();process.exit(0)"])
++            .stdin(std::process::Stdio::piped())
++            .stdout(std::process::Stdio::piped())
++            .stderr(std::process::Stdio::null())
++            .spawn().unwrap();
++        let stdin = child.stdin.take().unwrap();
++        let stdout = tokio::io::BufReader::new(child.stdout.take().unwrap());
++        let (mut incoming, _writer) = spawn_io(AppServerTransport { child, stdin, stdout });
++        assert!(tokio::time::timeout(std::time::Duration::from_millis(1500), incoming.recv()).await.unwrap().is_none());
++    }
++
++    #[test]
++    fn mcp_report_excludes_sensitive_details_and_validates_response() {
++        let report = sanitize_mcp(&json!({"configuredCount":2,"connectedCount":1,"failedCount":1,"processCount":1,"occurredAt":1,"error":"secret","authorization":{"authorizationUrl":"secret"}}));
++        assert_eq!(report["connectedCount"], 1);
++        assert!(!report.to_string().contains("secret"));
++        assert_eq!(sanitize_mcp(&json!({}))["check"], "invalid_response");
++        assert_eq!(sanitize_mcp(&json!({"statuses":{"bad":{"status":"invented"}}}))["check"], "invalid_response");
++    }
++
++    #[test]
++    fn removes_only_identical_latest_instruction_prefix() {
++        let a = "<system_instructions>\nA\n</system_instructions>\n";
++        let b = "<system_instructions>\nB\n</system_instructions>\n";
++        let history = json!({"messages":[{"info":{"role":"user"},"parts":[{"type":"text","text":format!("{a}old question")}]}]});
++        assert_eq!(without_duplicate_instructions(&format!("{a}new question"), &history), "new question");
++        let changed = format!("{b}new question");
++        assert_eq!(without_duplicate_instructions(&changed, &history), changed);
++        assert_eq!(without_duplicate_instructions("ordinary message", &history), "ordinary message");
++        assert_eq!(without_duplicate_instructions(&changed, &json!({})), changed);
++        let latest = json!({"messages":[{"info":{"role":"user"},"parts":[{"type":"text","text":format!("{a}old")} ]},{"info":{"role":"user"},"parts":[{"type":"text","text":format!("{b}new")}]}]});
++        let reverted = format!("{a}question");
++        assert_eq!(without_duplicate_instructions(&reverted, &latest), reverted);
++    }
++}
++
+ #[derive(Debug, thiserror::Error)]
+ pub enum SessionError {
+     #[error("failed to spawn app-server: {0}")]
+diff --git a/src/zcode/protocol.rs b/src/zcode/protocol.rs
+index 71fa3e9..adec1ca 100644
+--- a/src/zcode/protocol.rs
++++ b/src/zcode/protocol.rs
+@@ -147,10 +147,69 @@ pub mod methods {
+     pub const SESSION_MESSAGES: &str = "session/messages";
+     pub const SESSION_SET_MODE: &str = "session/setMode";
+     pub const SESSION_USAGE: &str = "session/usage";
++    pub const SESSION_READ: &str = "session/read";
+     pub const WORKSPACE_READ_STATE: &str = "workspace/readState";
+     pub const SESSION_EVENT: &str = "session/event";
+ }
+ 
++/// `session/read` snapshot, abridged to the fields the adapter consumes.
++/// Unknown or missing shapes must yield no measurement, never a fake value.
++#[derive(Debug, Clone, serde::Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct SessionReadSnapshot {
++    #[serde(default)]
++    pub projection: Option<ProjectionUsage>,
++}
++
++#[derive(Debug, Clone, serde::Deserialize)]
++#[serde(rename_all = "camelCase")]
++pub struct ProjectionUsage {
++    #[serde(default)]
++    pub context_used: Option<u64>,
++    #[serde(default)]
++    pub context_window: Option<u64>,
++}
++
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct UsageSample {
++    pub used_tokens: u64,
++    pub window_tokens: u64,
++}
++
++/// Extract the current context-occupancy sample from a `session/read`
++/// result. The projection carries the same numbers the native UI renders
++/// (last main-turn model call: input including cache, plus its output).
++pub fn usage_from_snapshot(value: &serde_json::Value) -> Option<UsageSample> {
++    let snapshot: SessionReadSnapshot = serde_json::from_value(value.clone()).ok()?;
++    let projection = snapshot.projection?;
++    let window_tokens = projection.context_window.filter(|w| *w > 0)?;
++    let used_tokens = projection.context_used?;
++    Some(UsageSample {
++        used_tokens,
++        window_tokens,
++    })
++}
++
++/// ZCode provider error code confirmed in the native CLI's registry as
++/// `ModelRateLimited` (five-hour coding-plan window exhausted, not
++/// retryable inside the window). Other neighboring codes in the same
++/// registry are deliberately not claimed without live confirmation.
++pub const GLM_RATE_LIMIT_ERROR_CODE: i64 = 1308;
++
++/// Read `error.code` from a `turn.failed` payload's error object.
++pub fn provider_error_code(error: &serde_json::Value) -> Option<i64> {
++    error.get("code").and_then(|v| v.as_i64())
++}
++
++/// Read `error.message` from a `turn.failed` payload's error object.
++pub fn provider_error_message(error: &serde_json::Value) -> String {
++    error
++        .get("message")
++        .and_then(|m| m.as_str())
++        .unwrap_or("turn failed")
++        .to_string()
++}
++
+ // ---------------------------------------------------------------------------
+ // session/create request
+ // ---------------------------------------------------------------------------
+@@ -188,7 +247,7 @@ pub struct ModelRef {
+ /// JSON builder in [`crate::zcode::session`].
+ #[derive(Debug, Clone, Serialize)]
+ pub struct McpServerEntry {
+-    #[serde(rename = "serverLabel")]
++    #[serde(skip_serializing)]
+     pub server_label: String,
+     #[serde(flatten)]
+     pub rest: Value,
+@@ -227,12 +286,20 @@ pub struct SubscribeParams {
+ pub struct SendParams {
+     pub session_id: String,
+     pub content: String,
++    #[serde(skip_serializing_if = "Vec::is_empty")]
++    pub attachments: Vec<ImageAttachment>,
+     #[serde(skip_serializing_if = "Option::is_none")]
+     pub input_id: Option<String>,
+     #[serde(skip_serializing_if = "Option::is_none")]
+     pub query_id: Option<String>,
+ }
+ 
++#[derive(Debug, Clone, Serialize)]
++#[serde(tag = "kind", rename_all = "lowercase", rename_all_fields = "camelCase")]
++pub enum ImageAttachment {
++    Image { data_base64: String, mime_type: String, filename: String, size_bytes: usize },
++}
++
+ #[derive(Debug, Clone, Deserialize)]
+ pub struct SendResult {
+     #[serde(default)]
+diff --git a/src/zcode/transport.rs b/src/zcode/transport.rs
+index 28c4e34..dc181ba 100644
+--- a/src/zcode/transport.rs
++++ b/src/zcode/transport.rs
+@@ -32,6 +32,12 @@ pub fn spawn(
+     extra_args: &[String],
+ ) -> std::io::Result<AppServerTransport> {
+     let mut cmd = Command::new(node);
++    if let Ok(executable) = std::env::current_exe() {
++        let preload = executable.with_file_name("zcode-native-stop-preload.cjs");
++        if preload.is_file() {
++            cmd.arg("--require").arg(preload);
++        }
++    }
+     cmd.arg(zcode_path);
+     cmd.arg("app-server");
+     cmd.args(extra_args);
+@@ -39,8 +45,13 @@ pub fn spawn(
+     cmd.env("ZCODE_LOG_LEVEL", "error"); // keep stderr quiet unless we raise it
+     cmd.stdin(Stdio::piped());
+     cmd.stdout(Stdio::piped());
+-    cmd.stderr(Stdio::inherit());
++    let diagnostic_path = std::env::temp_dir().join(format!("bb-zcode-native-{}.stderr.log", std::process::id()));
++    let diagnostic_file = std::fs::OpenOptions::new().create(true).append(true).open(&diagnostic_path)?;
++    tracing::warn!(path = %diagnostic_path.display(), "native stderr diagnostic file");
++    cmd.stderr(Stdio::from(diagnostic_file));
+     cmd.kill_on_drop(true);
++    #[cfg(windows)]
++    cmd.creation_flags(0x08000000);
+ 
+     let mut child = cmd.spawn()?;
+     let stdin = child.stdin.take().expect("stdin piped");
+diff --git a/src/inverse_patch.rs b/src/inverse_patch.rs
+new file mode 100644
+index 0000000..54df978
+--- /dev/null
++++ b/src/inverse_patch.rs
+@@ -0,0 +1,109 @@
++use serde_json::Value;
++
++pub fn restore(new_text: &str, hunks: &[Value]) -> Option<String> {
++    if hunks.is_empty() {
++        return None;
++    }
++    let actual: Vec<&str> = new_text.split_inclusive('\n').collect();
++    let mut output: Vec<String> = Vec::new();
++    let mut cursor = 0usize;
++    for hunk in hunks {
++        let count = |key| usize::try_from(hunk.get(key)?.as_u64()?).ok();
++        let old_count = count("oldLines")?;
++        let new_count = count("newLines")?;
++        let offset = |start: usize, len: usize| {
++            if len == 0 { Some(start) } else { start.checked_sub(1) }
++        };
++        let old_start = offset(count("oldStart")?, old_count)?;
++        let new_start = offset(count("newStart")?, new_count)?;
++        if new_start < cursor || new_start > actual.len() {
++            return None;
++        }
++        output.extend(actual[cursor..new_start].iter().map(|s| s.to_string()));
++        if old_start != output.len() {
++            return None;
++        }
++        let mut old_side: Vec<String> = Vec::new();
++        let mut new_side: Vec<String> = Vec::new();
++        let mut previous = None;
++        for line in hunk.get("lines")?.as_array()? {
++            let line = line.as_str()?;
++            if line == "\\ No newline at end of file" {
++                match previous.take()? {
++                    b'-' => { old_side.last_mut()?.pop()?; }
++                    b'+' => { new_side.last_mut()?.pop()?; }
++                    b' ' => { old_side.last_mut()?.pop()?; new_side.last_mut()?.pop()?; }
++                    _ => return None,
++                }
++                continue;
++            }
++            let prefix = *line.as_bytes().first()?;
++            let body = line.get(1..)?;
++            if body.contains('\n') {
++                return None;
++            }
++            let text = format!("{body}\n");
++            match prefix {
++                b'-' => old_side.push(text),
++                b'+' => new_side.push(text),
++                b' ' => { old_side.push(text.clone()); new_side.push(text); }
++                _ => return None,
++            }
++            previous = Some(prefix);
++        }
++        if old_side.len() != old_count || new_side.len() != new_count {
++            return None;
++        }
++        let end = new_start.checked_add(new_count)?;
++        if end > actual.len() || !new_side.iter().map(String::as_str).eq(actual[new_start..end].iter().copied()) {
++            return None;
++        }
++        output.extend(old_side);
++        cursor = end;
++    }
++    output.extend(actual[cursor..].iter().map(|s| s.to_string()));
++    if output.iter().take(output.len().saturating_sub(1)).any(|s| !s.ends_with('\n')) {
++        return None;
++    }
++    Some(output.concat())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::restore;
++    use serde_json::json;
++
++    #[test]
++    fn preserves_mixed_endings_and_untouched_duplicate_text() {
++        let h = json!({"oldStart":2,"oldLines":1,"newStart":2,"newLines":1,"lines":["-old\r","+same\r"]});
++        assert_eq!(restore("same\nsame\r\ntail", &[h]), Some("same\nold\r\ntail".into()));
++    }
++
++    #[test]
++    fn handles_empty_file_and_missing_newline() {
++        let deleted = json!({"oldStart":1,"oldLines":1,"newStart":0,"newLines":0,"lines":["-old","\\ No newline at end of file"]});
++        assert_eq!(restore("", &[deleted]), Some("old".into()));
++        let added = json!({"oldStart":0,"oldLines":0,"newStart":1,"newLines":1,"lines":["+new","\\ No newline at end of file"]});
++        assert_eq!(restore("new", &[added]), Some("".into()));
++    }
++
++    #[test]
++    fn validates_multiple_hunks_and_offsets() {
++        let first = json!({"oldStart":1,"oldLines":1,"newStart":1,"newLines":2,"lines":["-old","+a","+b"]});
++        let second = json!({"oldStart":3,"oldLines":1,"newStart":4,"newLines":1,"lines":["-end","+last"]});
++        assert_eq!(restore("a\nb\nmiddle\nlast\n", &[first.clone(),second.clone()]), Some("old\nmiddle\nend\n".into()));
++        assert_eq!(restore("a\nb\nmiddle\nlast\n", &[second,first]), None);
++    }
++
++    #[test]
++    fn rejects_malformed_or_stale_hunks() {
++        let good = json!({"oldStart":1,"oldLines":1,"newStart":1,"newLines":1,"lines":["-old","+new"]});
++        assert_eq!(restore("different\n", &[good.clone()]), None);
++        assert_eq!(restore("new\n", &[good.clone(),good.clone()]), None);
++        for (key, value) in [("oldLines", json!(2)), ("oldStart", json!(2)), ("lines", json!([42])), ("lines", json!(["?bad"]))] {
++            let mut bad = good.clone();
++            bad[key] = value;
++            assert_eq!(restore("new\n", &[bad]), None);
++        }
++    }
++}

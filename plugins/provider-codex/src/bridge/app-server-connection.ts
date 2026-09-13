@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
 import { experimental_recordProviderChildIo } from "@get-bb/plugin-sdk/provider-bridge";
 import type { z } from "zod";
@@ -6,7 +6,11 @@ import type { z } from "zod";
 const STDERR_TAIL_MAX_CHUNKS = 40;
 const CLOSE_AFTER_EXIT_GRACE_MS = 1_000;
 const KILL_ESCALATION_MS = 4_000;
-const CLOSED_STDIN_ERROR_CODES = new Set(["EPIPE", "ERR_STREAM_DESTROYED"]);
+const CLOSED_STDIN_ERROR_CODES = new Set([
+  "EOF",
+  "EPIPE",
+  "ERR_STREAM_DESTROYED",
+]);
 
 export interface CodexAppServerRequestResponder {
   result(value: unknown): void;
@@ -104,6 +108,7 @@ export function createCodexAppServerConnection(
     cwd: options.cwd,
     env: options.env,
     stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
   });
   experimental_recordProviderChildIo(child, {
     threadId: options.recordThreadId,
@@ -149,6 +154,29 @@ export function createCodexAppServerConnection(
       return exitPromise;
     }
     killStarted = true;
+    if (process.platform === "win32" && child.pid !== undefined) {
+      const pid = child.pid;
+      const forceTreeKill = (): void => {
+        execFile(
+          "taskkill.exe",
+          ["/PID", String(pid), "/T", "/F"],
+          { windowsHide: true, timeout: KILL_ESCALATION_MS },
+          (error) => {
+            if (error && !finalized) child.kill();
+          },
+        );
+      };
+      if (child.stdin && !child.stdin.destroyed) {
+        child.stdin.end();
+        const escalation = setTimeout(() => {
+          if (!finalized) forceTreeKill();
+        }, KILL_ESCALATION_MS);
+        escalation.unref?.();
+      } else {
+        forceTreeKill();
+      }
+      return exitPromise;
+    }
     const escalation = setTimeout(() => {
       if (!finalized) {
         child.kill("SIGKILL");
@@ -170,6 +198,7 @@ export function createCodexAppServerConnection(
     const detail = `stdin failed${code}: ${error.message}`;
     stdinFailure = new CodexAppServerExitedError(`codex app-server ${detail}`);
     pushStderrChunk(detail);
+    rejectAllPending(stdinFailure);
     killStarted = true;
     child.kill("SIGKILL");
   }

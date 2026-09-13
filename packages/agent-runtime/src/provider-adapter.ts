@@ -12,6 +12,7 @@ import type {
 import type {
   AgentRuntimeBridgeLaunch,
   AgentRuntimeSkillRoot,
+  NativeSessionOverrides,
 } from "./types.js";
 
 export interface CreateBridgeAdapterOptions {
@@ -64,6 +65,8 @@ export type AdapterCommand =
       threadId: string;
       cwd: string;
       providerThreadId: string;
+      resumeOriginal?: true;
+      nativeOverrides?: NativeSessionOverrides;
       options: ProviderExecutionContext;
       dynamicTools?: DynamicTool[];
       disallowedTools?: readonly string[];

@@ -1,6 +1,7 @@
 import { type MachineEnvironmentList } from "./api/machine-environment.js";
 import {
   machineEnvironmentReplaceSchema,
+  systemVoiceCorrectionRequestSchema,
   type MachineEnvironmentReplace,
 } from "./api/system.js";
 import {
@@ -196,6 +197,8 @@ import type {
   SystemUsageLimitsQuery,
   SystemVersionQuery,
   SystemVersionResponse,
+  SystemVoiceCorrectionRequest,
+  SystemVoiceCorrectionResponse,
   SystemVoiceTranscriptionForm,
   SystemVoiceTranscriptionResponse,
   TerminalListResponse,
@@ -219,6 +222,14 @@ import type {
   ThreadCountResponse,
   ThreadListQuery,
   ThreadListResponse,
+  ThreadNativeHistoryQuery,
+  ThreadNativeImageQuery,
+  ThreadNativeImageResponse,
+  ThreadNativeHistoryResponse,
+  ThreadNativeQuotaResponse,
+  ThreadDesktopSyncResponse,
+  ThreadDesktopRegisterRequest,
+  ThreadDesktopRegisterResponse,
   ThreadConversationOutlineResponse,
   ThreadOpenRequest,
   ThreadOpenResponse,
@@ -348,7 +359,10 @@ import {
   threadGetQuerySchema,
   threadHostFileContentQuerySchema,
   threadCountQuerySchema,
+  threadDesktopRegisterRequestSchema,
   threadListQuerySchema,
+  threadNativeHistoryQuerySchema,
+  threadNativeImageQuerySchema,
   threadOpenRequestSchema,
   threadPaneActionRequestSchema,
   threadSearchQuerySchema,
@@ -1312,6 +1326,50 @@ export const publicApiRoutes = {
       ),
       response: jsonResponse<PromptHistoryResponse>(),
     }),
+    nativeHistory: defineRoute({
+      path: "/threads/:id/native-history",
+      method: "get",
+      request: optionalQueryRequest<PathId, ThreadNativeHistoryQuery>(
+        threadNativeHistoryQuerySchema,
+      ),
+      response: jsonResponse<ThreadNativeHistoryResponse>(),
+    }),
+    nativeQuota: defineRoute({
+      path: "/threads/:id/native-quota",
+      method: "get",
+      request: noRequest<PathId>(),
+      response: jsonResponse<ThreadNativeQuotaResponse>(),
+    }),
+    desktopSync: defineRoute({
+      path: "/threads/:id/desktop-sync",
+      method: "get",
+      request: noRequest<PathId>(),
+      response: jsonResponse<ThreadDesktopSyncResponse>(),
+    }),
+    desktopRegister: defineRoute({
+      path: "/threads/:id/desktop-register",
+      method: "post",
+      request: jsonRequest<PathId, ThreadDesktopRegisterRequest>(
+        threadDesktopRegisterRequestSchema,
+      ),
+      response: jsonResponse<ThreadDesktopRegisterResponse>(),
+    }),
+    nativeImage: defineRoute({
+      path: "/threads/:id/native-image",
+      method: "get",
+      request: queryRequest<PathId, ThreadNativeImageQuery>(
+        threadNativeImageQuerySchema,
+      ),
+      response: jsonResponse<ThreadNativeImageResponse>(),
+    }),
+    nativeImageContent: defineRoute({
+      path: "/threads/:id/native-image/content",
+      method: "get",
+      request: queryRequest<PathId, ThreadNativeImageQuery>(
+        threadNativeImageQuerySchema,
+      ),
+      response: binaryResponse<Uint8Array>(),
+    }),
     deleteQueuedMessage: defineRoute({
       path: "/threads/:id/queued-messages/:queuedMessageId",
       method: "delete",
@@ -1777,6 +1835,14 @@ export const publicApiRoutes = {
       method: "post",
       request: formRequest<EmptyInput, SystemVoiceTranscriptionForm>(),
       response: jsonResponse<SystemVoiceTranscriptionResponse>(),
+    }),
+    voiceCorrection: defineRoute({
+      path: "/system/voice-correction",
+      method: "post",
+      request: jsonRequest<EmptyInput, SystemVoiceCorrectionRequest>(
+        systemVoiceCorrectionRequestSchema,
+      ),
+      response: jsonResponse<SystemVoiceCorrectionResponse>(),
     }),
     version: defineRoute({
       path: "/system/version",

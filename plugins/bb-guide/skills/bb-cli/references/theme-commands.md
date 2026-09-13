@@ -51,6 +51,32 @@ for a custom palette, put Pierre / VS Code theme JSON next to the stylesheet:
   side is a bundled Shiki name (`github-dark`) or a folder-relative `.json`
   file.
 
+## Typography
+
+- `bb typography` controls the **typography axis** — font families and density
+  for UI text, headings, and code, plus a global text scale. It is orthogonal
+  to the color palette (`bb theme`) and to light/dark mode; changing one never
+  touches the other.
+- Profiles: `standard` (Inter + system mono), `compact` (denser Inter),
+  `readable` (roomier, JetBrains Mono code), `editorial` (Golos Text headings),
+  `techno` (JetBrains Mono UI). All ship full Cyrillic coverage.
+- The text scale runs 90–110% in 5% steps and never scales the 10px chrome
+  micro-copy.
+- The selection is persisted server-side with the appearance, applied live to
+  every open window, and pre-painted from a local mirror on reload. Terminal
+  and Monaco update their font in open tabs without recreation.
+- All typography commands support `--json`.
+- Commands:
+  - `bb typography list` — profiles and the active selection.
+  - `bb typography set <profile>` — switch profile while preserving the
+    palette, favicon color, and text scale.
+  - `bb typography scale <percent>` — set the text scale (90–110, snapped to
+    5% steps) while preserving the profile.
+  - `bb typography reset` — `standard` at 100%.
+- The same controls are in Settings → Appearance, with a quick "Aa" menu in
+  the sidebar footer and a side-by-side Typography lab in the Theme Preview
+  panel.
+
 See [Pierre theme authoring](https://diffs.com/theme) for the JSON shape.
 
 To author the stylesheet, **read `references/theming.md` (in this skill's

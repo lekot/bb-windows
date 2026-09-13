@@ -60,7 +60,12 @@ describe("BottomAnchoredScrollBody scroll-anchor exclusion", () => {
     expect(sentinel.parentElement).toBe(contentWrapper.parentElement);
     const footer = container.querySelector("[data-scroll-footer]");
     expect(footer?.className).toContain("[overflow-anchor:none]");
-    expect(footer?.previousElementSibling).toBe(sentinel);
+    expect(footer?.className).not.toContain("sticky");
+    expect(footer?.hasAttribute("data-scroll-footer-external")).toBe(true);
+    expect(footer?.parentElement).toBe(
+      sentinel.parentElement?.parentElement?.parentElement,
+    );
+    expect(sentinel.parentElement?.contains(footer)).toBe(false);
   });
 
   it("never applies the exclusion class where scroll anchoring is unsupported", () => {

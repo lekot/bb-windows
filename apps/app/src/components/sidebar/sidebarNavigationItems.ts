@@ -92,26 +92,28 @@ export function createSidebarNavigationItems({
       shortcut: null,
       experimental_splitProps: {},
     },
-    ...navPanels.map((panel): ExperimentalSidebarNavigationItem => {
-      const action = {
-        kind: "open-plugin-panel",
-        pluginId: panel.pluginId,
-        panelId: panel.id,
-      } as const;
-      return {
-        id: getPluginPanelNavigationItemId(panel),
-        label: panel.title,
-        icon: {
-          kind: "plugin",
+    ...navPanels
+      .filter((panel) => panel.experimental_sidebarPlacement !== "footer")
+      .map((panel): ExperimentalSidebarNavigationItem => {
+        const action = {
+          kind: "open-plugin-panel",
           pluginId: panel.pluginId,
-          icon: panel.icon,
-        },
-        action,
-        isDisabled: false,
-        shortcut: null,
-        experimental_splitProps: splitPropsFor(action, panel.title),
-      };
-    }),
+          panelId: panel.id,
+        } as const;
+        return {
+          id: getPluginPanelNavigationItemId(panel),
+          label: panel.title,
+          icon: {
+            kind: "plugin",
+            pluginId: panel.pluginId,
+            icon: panel.icon,
+          },
+          action,
+          isDisabled: false,
+          shortcut: null,
+          experimental_splitProps: splitPropsFor(action, panel.title),
+        };
+      }),
   ];
 }
 

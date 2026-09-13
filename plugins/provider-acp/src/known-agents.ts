@@ -6,6 +6,19 @@ import { resolveOmpNativeRoots } from "./native-roots/omp.js";
 import { resolveOpenCodeNativeRoots } from "./native-roots/opencode.js";
 
 const PLUGIN_ID = "provider-acp";
+const OPENCODE_COMMAND =
+  process.env.BB_OPENCODE_EXECUTABLE?.trim() || "opencode";
+const DSH_WINDOWS_LAUNCH = [
+  "if ([string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)) { throw 'DEEPSEEK_API_KEY is not configured in the BB environment.' }",
+  "$entry = if ($env:BB_DEEPSEEK_HARNESS_EXECUTABLE) { $env:BB_DEEPSEEK_HARNESS_EXECUTABLE } else { (Get-Command dsh.cmd -ErrorAction Stop).Source }",
+  "& $entry --profile acp",
+  "exit $LASTEXITCODE",
+].join("; ");
+const DSH_COMMAND = process.platform === "win32" ? "pwsh.exe" : "dsh";
+const DSH_ARGS =
+  process.platform === "win32"
+    ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", DSH_WINDOWS_LAUNCH]
+    : ["--profile", "acp"];
 
 function declaredIcon(name: string): string {
   return `${PLUGIN_ID}/${name}`;
@@ -85,18 +98,26 @@ export const KNOWN_ACP_AGENTS: readonly AcpAgentDefinition[] = [
   },
   {
     id: "acp-opencode",
-    displayName: "opencode",
+    displayName: "DeepSeek",
     icon: declaredIcon("opencode"),
     iconTint: { light: "#2563EB", dark: "#2563EB" },
     signInCommand: "opencode auth login",
     installUrl: "https://opencode.ai/docs",
     visibility: "installed",
     dialect: "opencode",
+    parameterizedModelPicker: true,
+    primaryModels: [
+      "deepseek/deepseek-v4-flash",
+      "deepseek/deepseek-v4-pro",
+      "deepseek/deepseek-v4-flash-vision-exp",
+    ],
+    reasoningProbePriorityModelIds: ["deepseek/deepseek-v4-flash"],
     supportsManualCompaction: true,
+    reasoningLevelsOverride: ["low", "high", "max"],
     fork: "tip",
     launch: {
-      displayName: "opencode",
-      command: "opencode",
+      displayName: "DeepSeek",
+      command: OPENCODE_COMMAND,
       args: ["acp"],
       env: {},
       nativeSkillRoots: {
@@ -109,6 +130,38 @@ export const KNOWN_ACP_AGENTS: readonly AcpAgentDefinition[] = [
       },
     },
     nativeRootsResolver: resolveOpenCodeNativeRoots,
+  },
+  {
+    id: "acp-deepseek-harness",
+    displayName: "DeepSeek Harness",
+    icon: declaredIcon("deepseek-harness"),
+    iconTint: { light: "#2563EB", dark: "#60A5FA" },
+    signInCommand: "dsh web",
+    installUrl: "https://github.com/deepseek-ai/deepseek-harness",
+    visibility: "installed",
+    parameterizedModelPicker: true,
+    primaryModels: [
+      "deepseek-flash",
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+    ],
+    reasoningProbePriorityModelIds: ["deepseek-flash"],
+    reasoningLevelsOverride: ["low", "high", "max"],
+    fork: "none",
+    launch: {
+      displayName: "DeepSeek Harness",
+      command: DSH_COMMAND,
+      args: DSH_ARGS,
+      env: {},
+      nativeSkillRoots: {
+        user: [CLAUDE_SKILLS_ROOT, ".agents/skills", ".codex/skills"],
+        project: ancestorRoots([
+          ".agents/skills",
+          CLAUDE_SKILLS_ROOT,
+          ".codex/skills",
+        ]),
+      },
+    },
   },
   {
     id: "acp-omp",

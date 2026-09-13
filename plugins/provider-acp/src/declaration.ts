@@ -94,9 +94,14 @@ export function acpProviderDeclaration(
         ? { supportsManualCompaction: true }
         : {}),
       reasoningLevels:
-        agent.reasoningLevels === undefined
-          ? [...ACP_BASE_CAPABILITIES.reasoningLevels]
-          : [...agent.reasoningLevels],
+        agent.reasoningLevelsOverride !== undefined
+          ? [...agent.reasoningLevelsOverride]
+          : agent.reasoningLevels === undefined
+            ? [...ACP_BASE_CAPABILITIES.reasoningLevels]
+            : [...agent.reasoningLevels],
+      ...(agent.nativeHistoryReader === undefined
+        ? {}
+        : { experimental_nativeHistoryReader: agent.nativeHistoryReader }),
     },
     composerActions: [],
   };

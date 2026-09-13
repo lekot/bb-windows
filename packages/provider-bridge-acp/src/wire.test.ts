@@ -98,6 +98,31 @@ describe("acpInitializeResultSchema", () => {
 });
 
 describe("acpSessionNewResultSchema", () => {
+  it("preserves native session modes", () => {
+    const parsed = acpSessionNewResultSchema.parse({
+      sessionId: "session-1",
+      modes: {
+        currentModeId: "build",
+        availableModes: [
+          { id: "plan", name: "Plan" },
+          { id: "build", name: "Build" },
+          { id: "edit", name: "Edit" },
+          { id: "yolo", name: "Yolo" },
+        ],
+      },
+    });
+
+    expect(parsed.modes).toEqual({
+      currentModeId: "build",
+      availableModes: [
+        { id: "plan", name: "Plan" },
+        { id: "build", name: "Build" },
+        { id: "edit", name: "Edit" },
+        { id: "yolo", name: "Yolo" },
+      ],
+    });
+  });
+
   it("accepts explicit null for optional model and config-option strings", () => {
     const parsed = acpSessionNewResultSchema.safeParse({
       sessionId: "session-1",
@@ -150,6 +175,40 @@ describe("acpSessionNewResultSchema", () => {
     );
     expect(parsed.data.configOptions?.[1].category).toBeUndefined();
     expect(parsed.data.configOptions?.[1].options?.[0].name).toBeUndefined();
+  });
+
+  it("flattens grouped ACP model choices", () => {
+    const parsed = acpSessionNewResultSchema.parse({
+      sessionId: "session-1",
+      configOptions: [
+        {
+          type: "select",
+          id: "model",
+          category: "model",
+          name: "Model",
+          currentValue: "deepseek-official/deepseek-v4-flash",
+          options: [
+            {
+              group: "deepseek-official",
+              name: "DeepSeek Official",
+              options: [
+                {
+                  value: "deepseek-official/deepseek-v4-flash",
+                  name: "DeepSeek V4 Flash",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(parsed.configOptions?.[0].options).toEqual([
+      {
+        value: "deepseek-official/deepseek-v4-flash",
+        name: "DeepSeek V4 Flash",
+      },
+    ]);
   });
 });
 

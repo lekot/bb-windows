@@ -81,7 +81,6 @@ type TerminalAttachMessage = Extract<
 export interface TerminalManagerOptions {
   closeGracePeriodMs?: number;
   logger: HostDaemonLogger;
-  platform?: NodeJS.Platform;
   ptyAdapter?: TerminalPtyAdapter;
   resolveShell?: ResolveTerminalShell;
   runtimeManager: RuntimeManager;
@@ -322,7 +321,76 @@ function isNonEmptyString(value: string | undefined): value is string {
   return value !== undefined && value.length > 0;
 }
 
+const WINDOWS_SHELL_NAMES = ["pwsh.exe", "powershell.exe"] as const;
+
+async function firstExecutableOnPath(
+  shellName: (typeof WINDOWS_SHELL_NAMES)[number],
+  pathDirectories: readonly string[],
+): Promise<string | null> {
+  for (const directory of pathDirectories) {
+    const candidate = path.join(directory, shellName);
+    if (await pathIsExecutable(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+export async function resolveWindowsTerminalShell(): Promise<string> {
+  const pathValue = process.env.PATH ?? process.env.Path ?? "";
+  const pathDirectories = pathValue
+    .split(";")
+    .map((entry) => entry.trim())
+    .filter(isNonEmptyString);
+
+  const pwshOnPath = await firstExecutableOnPath("pwsh.exe", pathDirectories);
+  if (pwshOnPath !== null) {
+    return pwshOnPath;
+  }
+
+  const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
+  const localAppData = process.env.LOCALAPPDATA;
+  const pwshFallbacks = [
+    path.join(programFiles, "PowerShell", "7", "pwsh.exe"),
+    ...(localAppData === undefined
+      ? []
+      : [path.join(localAppData, "Microsoft", "WindowsApps", "pwsh.exe")]),
+  ];
+  for (const candidate of pwshFallbacks) {
+    if (await pathIsExecutable(candidate)) {
+      return candidate;
+    }
+  }
+
+  const powershellOnPath = await firstExecutableOnPath(
+    "powershell.exe",
+    pathDirectories,
+  );
+  if (powershellOnPath !== null) {
+    return powershellOnPath;
+  }
+
+  const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+  const windowsPowerShell = path.join(
+    systemRoot,
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
+  if (await pathIsExecutable(windowsPowerShell)) {
+    return windowsPowerShell;
+  }
+
+  throw new Error(
+    "No PowerShell was found on this machine. Install PowerShell 7 (pwsh) or use the built-in Windows PowerShell.",
+  );
+}
+
 async function resolveDefaultTerminalShell(): Promise<string> {
+  if (process.platform === "win32") {
+    return resolveWindowsTerminalShell();
+  }
   const candidates = [
     process.env.SHELL,
     "/bin/zsh",
@@ -364,12 +432,27 @@ function terminalTitleFromCommand(command: string): string {
   return `${normalized.slice(0, 77)}...`;
 }
 
-function terminalSpawnArgsForStart(message: TerminalOpenMessage): string[] {
+type TerminalShellFamily = "posix" | "powershell";
+
+export function terminalShellFamily(shell: string): TerminalShellFamily {
+  const name = shell.split(/[\\/]/).at(-1)?.toLowerCase() ?? "";
+  return name === "pwsh.exe" || name === "powershell.exe" || name === "pwsh"
+    ? "powershell"
+    : "posix";
+}
+
+function terminalSpawnArgsForStart(
+  message: TerminalOpenMessage,
+  shell: string,
+): string[] {
+  const family = terminalShellFamily(shell);
   switch (message.start.mode) {
     case "shell":
-      return [];
+      return family === "powershell" ? ["-NoLogo"] : [];
     case "command":
-      return ["-lc", message.start.command];
+      return family === "powershell"
+        ? ["-NoLogo", "-Command", message.start.command]
+        : ["-lc", message.start.command];
   }
 }
 
@@ -439,7 +522,6 @@ function consumePrimaryDeviceAttributesQueries(
 
 export class TerminalManager {
   private readonly closeGracePeriodMs: number;
-  private readonly platform: NodeJS.Platform;
   private readonly ptyAdapter: TerminalPtyAdapter;
   private readonly resolveShell: ResolveTerminalShell;
   private readonly terminalOperations = new Map<string, Promise<void>>();
@@ -449,7 +531,6 @@ export class TerminalManager {
   constructor(private readonly options: TerminalManagerOptions) {
     this.closeGracePeriodMs =
       options.closeGracePeriodMs ?? DEFAULT_TERMINAL_CLOSE_GRACE_PERIOD_MS;
-    this.platform = options.platform ?? process.platform;
     this.ptyAdapter = options.ptyAdapter ?? nodePtyAdapter;
     this.resolveShell = options.resolveShell ?? resolveDefaultTerminalShell;
   }
@@ -518,22 +599,12 @@ export class TerminalManager {
       return;
     }
 
-    if (this.platform === "win32") {
-      this.sendTerminalError({
-        code: "unsupported_platform",
-        message: "Native Windows terminals are not supported",
-        requestId: message.requestId,
-        terminalId: message.terminalId,
-      });
-      return;
-    }
-
     this.openingTerminalIds.add(message.terminalId);
     try {
       const target = await this.resolveTerminalOpenTarget(message);
       const shell = await this.resolveShell();
       const pty = this.ptyAdapter.spawn({
-        args: terminalSpawnArgsForStart(message),
+        args: terminalSpawnArgsForStart(message, shell),
         cols: message.cols,
         cwd: target.cwd,
         env: operationEnvironment(

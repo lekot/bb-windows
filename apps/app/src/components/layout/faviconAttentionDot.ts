@@ -15,6 +15,7 @@ type FaviconSidebarThread = ThreadReadState &
 interface ShouldShowFaviconAttentionDotArgs {
   currentThreadHasPendingInteraction: boolean;
   currentThreadId?: string | null;
+  isDocumentVisible: boolean;
   isThreadView: boolean;
   sidebarThreads: readonly FaviconSidebarThread[];
   thread: ThreadReadState | null | undefined;
@@ -39,14 +40,44 @@ function isPendingDelegatedChildOfCurrentThread(
   );
 }
 
+function isPendingForkOfCurrentThread(
+  thread: FaviconSidebarThread,
+  currentThreadId: string,
+): boolean {
+  return (
+    thread.parentThreadId === currentThreadId &&
+    thread.originKind === "fork" &&
+    thread.hasPendingInteraction
+  );
+}
+
 export function shouldShowFaviconAttentionDot({
   currentThreadHasPendingInteraction,
   currentThreadId,
+  isDocumentVisible,
   isThreadView,
   sidebarThreads,
   thread,
 }: ShouldShowFaviconAttentionDotArgs): boolean {
+  const sidebarNeedsAttention = sidebarThreads.some(
+    (candidate) =>
+      !(
+        isThreadView &&
+        isDocumentVisible &&
+        currentThreadId != null &&
+        candidate.id === currentThreadId
+      ) &&
+      (isUnreadSidebarThread(candidate) ||
+        (isPendingSidebarThread(candidate) &&
+          !(
+            currentThreadId != null &&
+            isPendingForkOfCurrentThread(candidate, currentThreadId)
+          ))),
+  );
+
   if (isThreadView) {
+    const hiddenCurrentThreadNeedsAttention =
+      !isDocumentVisible && Boolean(thread && !isThreadRead(thread));
     const childNeedsAttention =
       currentThreadId != null &&
       sidebarThreads.some((candidate) =>
@@ -54,13 +85,11 @@ export function shouldShowFaviconAttentionDot({
       );
     return (
       currentThreadHasPendingInteraction ||
+      hiddenCurrentThreadNeedsAttention ||
       childNeedsAttention ||
-      Boolean(thread && !isThreadRead(thread))
+      sidebarNeedsAttention
     );
   }
 
-  return sidebarThreads.some(
-    (candidate) =>
-      isPendingSidebarThread(candidate) || isUnreadSidebarThread(candidate),
-  );
+  return sidebarNeedsAttention;
 }

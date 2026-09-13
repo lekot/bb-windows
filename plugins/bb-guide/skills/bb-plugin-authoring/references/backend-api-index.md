@@ -192,6 +192,7 @@ Read the installed declarations for exact current signatures.
 - `PluginProviderModelCatalogScope`
 - `PluginProviderNativeRootEntry`
 - `PluginProviderNativeRoots`
+- `PluginProviderNativeHistoryReader`
 - `PluginProviderOptionDescriptor`
 - `PluginProviderOptionsContext`
 - `PluginProviderPermissionMode`

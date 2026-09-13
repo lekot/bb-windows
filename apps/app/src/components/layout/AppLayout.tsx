@@ -40,6 +40,10 @@ import {
 } from "@/hooks/queries/thread-queries";
 import { useRouteState } from "@/hooks/useRouteState";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
+import {
+  isDocumentVisible,
+  useDocumentVisibilityRevision,
+} from "@/lib/document-visibility";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { APP_OVERLAY_LAYER } from "@/components/ui/app-overlay-layers";
 import { ProjectPathDialog } from "@/components/dialogs/ProjectPathDialog";
@@ -615,9 +619,11 @@ export function AppLayout({ children }: AppLayoutProps) {
   const currentThreadHasPendingInteraction =
     getLatestPendingInteraction(currentThreadPendingInteractionsQuery.data) !==
     null;
+  useDocumentVisibilityRevision();
   const faviconBadge = shouldShowFaviconAttentionDot({
     currentThreadHasPendingInteraction,
     currentThreadId: threadId,
+    isDocumentVisible: isDocumentVisible(),
     isThreadView,
     sidebarThreads,
     thread,

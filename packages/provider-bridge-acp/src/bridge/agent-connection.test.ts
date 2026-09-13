@@ -1,8 +1,9 @@
+import * as childProcess from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   AcpAgentExitedError,
@@ -13,6 +14,11 @@ import {
 } from "./agent-connection.js";
 
 const EPIPE_PAYLOAD_SIZE = 1024 * 1024;
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, spawn: vi.fn(actual.spawn) };
+});
 
 function deferred<T>(): {
   promise: Promise<T>;
@@ -105,7 +111,9 @@ describe("ACP agent stdio lifecycle", () => {
     }
   });
 
-  it("rejects requests and stops an agent that closes stdin but stays alive", async () => {
+  it("rejects pending and future requests on closed stdin, including Windows EOF", async () => {
+    const spawnSpy = vi.mocked(childProcess.spawn);
+    spawnSpy.mockClear();
     const ready = deferred<void>();
     const exited = deferred<AcpAgentExitInfo>();
     const connection = createAcpAgentConnection({
@@ -142,6 +150,17 @@ describe("ACP agent stdio lifecycle", () => {
         }),
       ]);
 
+      if (process.platform === "win32") {
+        const spawned = spawnSpy.mock.results[0];
+        if (spawned?.type !== "return" || !spawned.value.stdin) {
+          throw new Error("Expected the owned test child stdin");
+        }
+        spawned.value.stdin.emit(
+          "error",
+          Object.assign(new Error("write EOF"), { code: "EOF" }),
+        );
+      }
+
       await expect(requestWithDeadline).rejects.toBeInstanceOf(
         AcpAgentExitedError,
       );
@@ -158,6 +177,7 @@ describe("ACP agent stdio lifecycle", () => {
         signal: null,
       });
     } finally {
+      spawnSpy.mockClear();
       await stopConnection(connection, exited.promise);
     }
   });
@@ -224,10 +244,11 @@ describe("ACP agent stdio lifecycle", () => {
           resultSchema: z.unknown(),
         }),
       ).rejects.toThrow(`ACP agent "${process.execPath}" is not running`);
-      await expect(exited.promise).resolves.toMatchObject({
-        code: 0,
-        signal: null,
-      });
+      await expect(exited.promise).resolves.toMatchObject(
+        process.platform === "win32"
+          ? { code: null, signal: "SIGKILL" }
+          : { code: 0, signal: null },
+      );
     } finally {
       await stopConnection(connection, exited.promise);
     }

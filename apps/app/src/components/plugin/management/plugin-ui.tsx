@@ -26,7 +26,7 @@ export const SUCCESS_TEXT_STYLE = {
   color: "color-mix(in oklab, var(--success) 80%, var(--ink))",
 } as const;
 
-const PLUGIN_INSTALL_COUNT_FORMATTER = new Intl.NumberFormat(undefined, {
+const PLUGIN_INSTALL_COUNT_FORMATTER = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
 });
@@ -37,7 +37,7 @@ export function pluginInstallCountPresentation(
   if (installs === null) return undefined;
   return {
     display: PLUGIN_INSTALL_COUNT_FORMATTER.format(installs),
-    accessibleLabel: `${installs.toLocaleString()} ${installs === 1 ? "install" : "installs"}`,
+    accessibleLabel: `${installs.toLocaleString("en-US")} ${installs === 1 ? "install" : "installs"}`,
   };
 }
 
@@ -229,7 +229,7 @@ export function CatalogEntryIconChip({
 }
 
 export function formatAbsoluteDate(epochMs: number): string {
-  return new Date(epochMs).toLocaleDateString(undefined, {
+  return new Date(epochMs).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",

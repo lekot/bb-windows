@@ -20,13 +20,14 @@
     "bb-plugin-environment-personal-workspace": "workspace:*",
     "bb-plugin-environment-project-checkout": "workspace:*",
     "bb-plugin-github": "workspace:*",
+    "bb-plugin-git-graph": "workspace:*",
     "bb-plugin-inline-vis": "workspace:*",
     "bb-plugin-keep-awake": "workspace:*",
     "bb-plugin-memory": "workspace:*",
     "bb-plugin-monaco-editor": "workspace:*",
     "bb-plugin-pdf-preview": "workspace:*",
+    "bb-plugin-pc-control": "workspace:*",
     "bb-plugin-plugin-api-docs": "workspace:*",
-    "bb-plugin-plugin-api-tester": "workspace:*",
     "bb-plugin-provider-acp": "workspace:*",
     "bb-plugin-provider-claude-code": "workspace:*",
     "bb-plugin-provider-codex": "workspace:*",
@@ -38,8 +39,8 @@
     "bb-plugin-secrets": "workspace:*",
     "bb-plugin-side-chat": "workspace:*",
     "bb-plugin-simple-notes": "workspace:*",
-    "bb-plugin-tasks": "workspace:*",
-    "bb-plugin-theme-preview": "workspace:*",
+    "bb-plugin-windows-screen": "workspace:*",
+    "bb-plugin-workspace-explorer": "workspace:*",
     "bb-plugin-workflows": "workspace:*"
   }
 }

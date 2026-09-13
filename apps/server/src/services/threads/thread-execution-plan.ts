@@ -210,6 +210,30 @@ function validateProviderPermissionMode(
   );
 }
 
+const DEFAULT_REASONING_PREFERENCE_ORDER: readonly ReasoningLevel[] = [
+  DEFAULT_REASONING_LEVEL,
+  "high",
+  "max",
+  "xhigh",
+  "medium",
+  "low",
+];
+
+export function resolveDefaultReasoningLevel(
+  defaultLevel: ReasoningLevel,
+  supportedLevels: readonly ReasoningLevel[],
+): ReasoningLevel {
+  if (supportedLevels.length === 0 || supportedLevels.includes(defaultLevel)) {
+    return defaultLevel;
+  }
+  for (const candidate of DEFAULT_REASONING_PREFERENCE_ORDER) {
+    if (supportedLevels.includes(candidate)) {
+      return candidate;
+    }
+  }
+  return supportedLevels[0];
+}
+
 function validateProviderReasoningLevel(
   registry: ProviderRegistryService,
   providerId: string,
@@ -312,7 +336,12 @@ export async function resolveExistingThreadExecutionPlan(
     permissionMode,
   );
 
-  const reasoningLevel = resolveFieldWithDefault<ReasoningLevel>(
+  const hasExplicitReasoning =
+    args.input.reasoningLevel?.value !== undefined ||
+    thread.reasoningLevelOverride !== null ||
+    lastExecution?.reasoningLevel !== undefined ||
+    projectExecution?.reasoningLevel !== undefined;
+  const resolvedReasoning = resolveFieldWithDefault<ReasoningLevel>(
     [
       args.input.reasoningLevel?.value,
       thread.reasoningLevelOverride ?? undefined,
@@ -321,6 +350,15 @@ export async function resolveExistingThreadExecutionPlan(
     ],
     DEFAULT_REASONING_LEVEL,
   );
+  const reasoningLevel = hasExplicitReasoning
+    ? resolvedReasoning
+    : resolveDefaultReasoningLevel(
+        resolvedReasoning,
+        getSupportedReasoningLevelsForProvider(
+          deps.providerRegistry,
+          thread.providerId,
+        ),
+      );
   validateProviderReasoningLevel(
     deps.providerRegistry,
     thread.providerId,

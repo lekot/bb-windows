@@ -83,8 +83,10 @@ export function buildAttachmentItems({
   }
 
   const imageItems: ConversationImageItem[] = [
-    ...attachments.imageUrls.map((url) => ({
-      alt: fileNameFromPath(url),
+    ...attachments.imageUrls.map((url, index) => ({
+      alt: /^\/api\/v1\/threads\/[^/]+\/native-image\/content\?/.test(url)
+        ? `Изображение ${index + 1} из истории`
+        : fileNameFromPath(url),
       src: url,
     })),
     ...attachments.localImagePaths.map((path) => ({

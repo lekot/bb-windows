@@ -97,6 +97,15 @@ describe("parseLocalFileHref", () => {
       path: "/work space/app.ts",
       lineRange: { startLineNumber: 3, endLineNumber: 3 },
     });
+    expect(
+      parseLocalFileHref({
+        absoluteLinks: TRUSTED_HOST_ABSOLUTE_LINKS,
+        href: "C:/workspace/bb-example/plugins/tasks/app.tsx:49",
+      }),
+    ).toEqual({
+      path: "C:/workspace/bb-example/plugins/tasks/app.tsx",
+      lineRange: { startLineNumber: 49, endLineNumber: 49 },
+    });
   });
 
   it("applies the same containment policy to absolute paths and file URLs", () => {

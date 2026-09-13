@@ -76,6 +76,7 @@ describe("probeBbServer", () => {
       .mockResolvedValueOnce(
         Response.json({
           hostDaemonPort: 4_242,
+          voiceCorrectionEnabled: false,
           voiceTranscriptionEnabled: false,
         }),
       );
@@ -108,6 +109,7 @@ describe("probeBbServer", () => {
             JSON.stringify({
               hostDaemonPort: 38887,
               primaryHostPlatform: null,
+              voiceCorrectionEnabled: false,
               voiceTranscriptionEnabled: false,
             }),
           );
@@ -134,6 +136,7 @@ describe("probeBbServer", () => {
         Response.json({
           dataDir: "/Users/example/.bb",
           hostDaemonPort: 4_242,
+          voiceCorrectionEnabled: false,
           voiceTranscriptionEnabled: false,
         }),
       );
@@ -185,6 +188,7 @@ describe("probeBbServer", () => {
             JSON.stringify({
               hostDaemonPort: 38887,
               primaryHostPlatform: null,
+              voiceCorrectionEnabled: false,
               voiceTranscriptionEnabled: false,
             }),
           );
@@ -240,6 +244,7 @@ describe("waitForCompatibleServer", () => {
       .mockResolvedValueOnce(
         Response.json({
           hostDaemonPort: 4_242,
+          voiceCorrectionEnabled: false,
           voiceTranscriptionEnabled: false,
         }),
       );

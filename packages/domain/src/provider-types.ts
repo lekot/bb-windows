@@ -30,6 +30,15 @@ export type ProviderModelCatalogScope = z.infer<
   typeof providerModelCatalogScopeSchema
 >;
 
+export const nativeHistoryReaderKindSchema = z.enum([
+  "claude-transcript",
+  "codex-rollout",
+  "zcode-sqlite",
+]);
+export type NativeHistoryReaderKind = z.infer<
+  typeof nativeHistoryReaderKindSchema
+>;
+
 const providerCapabilitiesSchema = z.object({
   supportsThreadArchive: z.boolean(),
   supportsThreadRename: z.boolean(),
@@ -39,6 +48,7 @@ const providerCapabilitiesSchema = z.object({
   supportsSessionRewind: z.boolean(),
   permissionModes: z.array(permissionModeSchema).min(1),
   modelCatalogScope: providerModelCatalogScopeSchema,
+  nativeHistoryReader: nativeHistoryReaderKindSchema.optional(),
 });
 export type ProviderCapabilities = z.infer<typeof providerCapabilitiesSchema>;
 

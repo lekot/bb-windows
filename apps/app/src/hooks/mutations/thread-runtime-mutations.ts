@@ -1,12 +1,20 @@
+import { useCallback, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ThreadQueuedMessage } from "@bb/domain";
 import type {
   CreateQueuedMessageRequest,
   SendQueuedMessageMode,
   SendQueuedMessageResponse,
+  ThreadNativeHistoryResponse,
   ThreadQueuedMessageListResponse,
   UpdateQueuedMessageRequest,
 } from "@bb/server-contract";
+import {
+  nativeHistoryQueryKey,
+  nativeHistoryQueryOptions,
+} from "../queries/native-history-query";
+import { findCachedProviderInfo } from "../queries/system-queries";
+import { getCachedThreadResponse } from "../cache-owners/thread-runtime-cache-owner";
 import type { AppCreateThreadRequest } from "@bb/client-core";
 import { BbHttpError, sdk } from "@/lib/sdk";
 import { wsManager } from "@/lib/ws";
@@ -178,6 +186,20 @@ export function useSendThreadMessage() {
       senderThreadId,
       executionInputSources,
     }: SendThreadMessageMutationRequest) => {
+      const thread = getCachedThreadResponse(queryClient, id);
+      if (thread !== undefined) {
+        const nativeHistory =
+          queryClient.getQueryData<ThreadNativeHistoryResponse>(
+            nativeHistoryQueryKey(id),
+          );
+        const provider = findCachedProviderInfo(queryClient, thread.providerId);
+        if (
+          nativeHistory?.supported === true ||
+          provider?.capabilities.nativeHistoryReader !== undefined
+        ) {
+          await queryClient.fetchQuery(nativeHistoryQueryOptions(id));
+        }
+      }
       return await sdk.threads.send({
         threadId: id,
         input,
@@ -519,6 +541,60 @@ export function useStopThread() {
       settleStopThreadTransaction({ queryClient, threadId });
     },
   });
+}
+
+export interface ThreadCompactState {
+  inFlight: boolean;
+  error: string | null;
+  disabledReason: string | null;
+}
+
+function compactErrorMessage(error: unknown): string | null {
+  if (error === null) return null;
+  if (error instanceof BbHttpError) {
+    return getHttpErrorBodyMessage(error) ?? error.message;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function useCompactThread() {
+  const inFlightRef = useRef(false);
+  const mutation = useMutation({
+    meta: {
+      errorMessage: "Failed to compact thread context.",
+      lifecycleOperation: "compact_thread",
+    },
+    mutationFn: async (threadId: string) => {
+      await sdk.threads.compact({ threadId });
+    },
+  });
+
+  const request = useCallback(
+    (threadId: string) => {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      mutation.mutate(threadId, {
+        onSettled: () => {
+          inFlightRef.current = false;
+        },
+      });
+    },
+    [mutation],
+  );
+
+  const stateFor = useCallback(
+    (threadId: string): ThreadCompactState => ({
+      inFlight: mutation.isPending && mutation.variables === threadId,
+      error:
+        mutation.variables === threadId
+          ? compactErrorMessage(mutation.error)
+          : null,
+      disabledReason: null,
+    }),
+    [mutation.isPending, mutation.variables, mutation.error],
+  );
+
+  return { request, stateFor };
 }
 
 export function useCancelThreadPlan() {

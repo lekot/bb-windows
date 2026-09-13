@@ -8,6 +8,8 @@ import {
   resolveCodeTheme,
   type AppTheme,
   type FaviconColorPreference,
+  type FontScalePercent,
+  type TypographyProfileId,
 } from "@bb/domain";
 import { readCustomThemeCodeTheme } from "./code-themes.js";
 
@@ -55,10 +57,16 @@ export function readCustomThemeCss(
   return css;
 }
 
+export interface ResolvedAppThemeTypography {
+  typographyProfile: TypographyProfileId;
+  fontScalePercent: FontScalePercent;
+}
+
 export function resolveAppTheme(
   themeRoot: string,
   themeId: string,
   faviconColor: FaviconColorPreference,
+  typography: ResolvedAppThemeTypography,
 ): AppTheme {
   const declared = isBuiltInThemeId(themeId)
     ? null
@@ -69,6 +77,7 @@ export function resolveAppTheme(
       themeId,
       customCss: null,
       faviconColor,
+      ...typography,
       resolvedCodeTheme,
     };
   }
@@ -77,8 +86,9 @@ export function resolveAppTheme(
     return {
       ...defaultAppTheme,
       faviconColor,
+      ...typography,
       resolvedCodeTheme: resolveCodeTheme(null, "default"),
     };
   }
-  return { themeId, customCss, faviconColor, resolvedCodeTheme };
+  return { themeId, customCss, faviconColor, ...typography, resolvedCodeTheme };
 }

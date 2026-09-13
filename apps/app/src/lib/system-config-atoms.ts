@@ -43,6 +43,7 @@ const unavailableSystemConfig: SystemConfigResponse = {
   serverUrl: "",
   primaryHostId: null,
   primaryHostPlatform: null,
+  voiceCorrectionEnabled: false,
   voiceTranscriptionEnabled: false,
   aiServices: {
     inference: DEFAULTS.inferenceModel,

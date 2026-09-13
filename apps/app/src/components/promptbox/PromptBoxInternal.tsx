@@ -414,18 +414,31 @@ export interface PromptVoiceConfig {
   state: PromptVoiceState;
   isSupported: boolean;
   unsupportedReason?: VoiceUnsupportedReason | null;
+  isCorrecting?: boolean;
   stream: MediaStream | null;
   start: () => void | Promise<void>;
   stop: () => void;
   cancel: () => void;
 }
 
+export interface PromptInsertionSnapshot {
+  liveText: string;
+  liveMentions: readonly PromptTextMention[];
+  insertedFrom: number;
+  insertedTo: number;
+  insertedText: string;
+}
+
 export interface PromptBoxHandle {
   focusEnd: () => void;
   captureHeightForLayoutChange: () => void;
-  insertTextAtCursor: (text: string) => void;
+  insertTextAtCursor: (text: string) => PromptInsertionSnapshot | null;
   getTextBeforeCursor: () => string | undefined;
   playVoiceCompletionTransition: () => Promise<void>;
+  replaceInsertedText: (args: {
+    snapshot: PromptInsertionSnapshot;
+    replacement: string;
+  }) => boolean;
 }
 
 export type { PromptBoxAction } from "./PromptBoxActionsMenu";
@@ -1291,6 +1304,7 @@ export function PromptBoxInternal({
   const hasActiveHistorySessionRef = useRef(false);
   const isVoiceRecording = voice?.state === "recording";
   const isVoiceProcessing = voice?.state === "transcribing";
+  const isCorrectingVoiceInput = voice?.isCorrecting === true;
   const showVoiceActionGroup = isVoiceRecording || isVoiceProcessing;
   const voiceActionState = isVoiceRecording
     ? "recording"
@@ -2380,22 +2394,29 @@ export function PromptBoxInternal({
   }, [isPointerCoarse, scheduleRevealEditorSelection]);
 
   const insertTextAtCursor = useCallback(
-    (rawText: string) => {
+    (rawText: string): PromptInsertionSnapshot | null => {
       const normalizedText = rawText.replace(/\s+/g, " ").trim();
-      if (normalizedText.length === 0) return;
+      if (normalizedText.length === 0) return null;
 
       const currentEditor = editorRef.current;
       const currentValue = valueRef.current;
-      if (!currentEditor) {
-        const nextValue =
-          currentValue.length === 0 || /\s$/.test(currentValue)
-            ? `${currentValue}${normalizedText}`
-            : `${currentValue} ${normalizedText}`;
+      if (!currentEditor || currentEditor.isDestroyed) {
+        const glue =
+          currentValue.length > 0 && !/\s$/.test(currentValue) ? " " : "";
+        const nextValue = `${currentValue}${glue}${normalizedText}`;
+        const insertedFrom = currentValue.length;
         onChangeRef.current(nextValue, [...mentionRangesRef.current]);
-        return;
+        return {
+          liveText: nextValue,
+          liveMentions: [...mentionRangesRef.current],
+          insertedFrom,
+          insertedTo: nextValue.length,
+          insertedText: nextValue.slice(insertedFrom),
+        };
       }
 
       const selection = currentEditor.state.selection;
+      const insertedFrom = selection.from;
       const before = currentEditor.state.doc.textBetween(
         0,
         selection.from,
@@ -2416,8 +2437,84 @@ export function PromptBoxInternal({
       if (!isPointerCoarse) insertion.focus();
       insertion.insertContent(insertedText).run();
       if (!isPointerCoarse) scheduleRevealEditorSelection();
+
+      const insertedTo = currentEditor.state.selection.from;
+      if (
+        insertedTo < insertedFrom ||
+        currentEditor.state.doc.textBetween(
+          insertedFrom,
+          insertedTo,
+          "\n",
+          "\n",
+        ) !== insertedText
+      ) {
+        return null;
+      }
+      const liveValue = promptEditorValueFromDoc(currentEditor.state.doc);
+      return {
+        liveText: liveValue.text,
+        liveMentions: liveValue.mentions,
+        insertedFrom,
+        insertedTo,
+        insertedText,
+      };
     },
     [isPointerCoarse, scheduleRevealEditorSelection],
+  );
+
+  const replaceInsertedText = useCallback(
+    (args: {
+      snapshot: PromptInsertionSnapshot;
+      replacement: string;
+    }): boolean => {
+      const normalizedReplacement = args.replacement
+        .replace(/\s+/g, " ")
+        .trim();
+      if (normalizedReplacement.length === 0) return false;
+
+      const leadingWhitespace =
+        /^\s+/.exec(args.snapshot.insertedText)?.[0] ?? "";
+      const trailingWhitespace =
+        /\s+$/.exec(args.snapshot.insertedText)?.[0] ?? "";
+      const replacementText = `${leadingWhitespace}${normalizedReplacement}${trailingWhitespace}`;
+      const currentEditor = editorRef.current;
+      if (!currentEditor || currentEditor.isDestroyed) {
+        if (valueRef.current !== args.snapshot.liveText) return false;
+        const nextValue = `${valueRef.current.slice(0, args.snapshot.insertedFrom)}${replacementText}${valueRef.current.slice(args.snapshot.insertedTo)}`;
+        onChangeRef.current(nextValue, [...args.snapshot.liveMentions]);
+        return true;
+      }
+
+      const liveValue = promptEditorValueFromDoc(currentEditor.state.doc);
+      if (
+        !arePromptEditorValuesEqual(
+          {
+            text: args.snapshot.liveText,
+            mentions: args.snapshot.liveMentions,
+          },
+          liveValue,
+        ) ||
+        currentEditor.state.doc.textBetween(
+          args.snapshot.insertedFrom,
+          args.snapshot.insertedTo,
+          "\n",
+          "\n",
+        ) !== args.snapshot.insertedText
+      ) {
+        return false;
+      }
+
+      currentEditor
+        .chain()
+        .deleteRange({
+          from: args.snapshot.insertedFrom,
+          to: args.snapshot.insertedTo,
+        })
+        .insertContentAt(args.snapshot.insertedFrom, replacementText)
+        .run();
+      return true;
+    },
+    [],
   );
 
   const focusAfterPromptAction = useCallback(
@@ -2548,6 +2645,7 @@ export function PromptBoxInternal({
       insertTextAtCursor,
       getTextBeforeCursor,
       playVoiceCompletionTransition,
+      replaceInsertedText,
     }),
     [
       capturePromptBoxHeight,
@@ -2555,6 +2653,7 @@ export function PromptBoxInternal({
       getTextBeforeCursor,
       insertTextAtCursor,
       playVoiceCompletionTransition,
+      replaceInsertedText,
     ],
   );
 
@@ -3287,22 +3386,36 @@ export function PromptBoxInternal({
                           size="icon"
                           variant="ghost"
                           aria-label={
-                            !voice.isSupported
-                              ? voiceUnsupportedMessage(
-                                  voice.unsupportedReason ?? null,
-                                )
-                              : "Start voice input"
+                            isCorrectingVoiceInput
+                              ? "Cancel voice correction"
+                              : !voice.isSupported
+                                ? voiceUnsupportedMessage(
+                                    voice.unsupportedReason ?? null,
+                                  )
+                                : "Start voice input"
                           }
-                          disabled={!canStartVoiceInput}
+                          disabled={
+                            !canStartVoiceInput && !isCorrectingVoiceInput
+                          }
                           onPointerDown={handleVoicePointerDown}
-                          onClick={handleVoiceClick}
+                          onClick={
+                            isCorrectingVoiceInput
+                              ? cancelVoiceInput
+                              : handleVoiceClick
+                          }
                           className={
                             showCompactLayout
                               ? COMPACT_PROMPT_ACTION_BUTTON_CLASS
                               : COARSE_POINTER_PROMPT_ICON_ACTION_BUTTON_CLASS
                           }
                         >
-                          <Icon name="Mic" className="size-4" />
+                          <Icon
+                            name={isCorrectingVoiceInput ? "Spinner" : "Mic"}
+                            className={cn(
+                              "size-4",
+                              isCorrectingVoiceInput && "animate-spin",
+                            )}
+                          />
                         </Button>
                       ) : null}
                     </>
@@ -3337,9 +3450,17 @@ export function PromptBoxInternal({
                         type="button"
                         size={showCompactLayout ? "icon" : "sm"}
                         variant="default"
-                        aria-label="Start voice input"
+                        aria-label={
+                          isCorrectingVoiceInput
+                            ? "Cancel voice correction"
+                            : "Start voice input"
+                        }
                         onPointerDown={handleVoicePointerDown}
-                        onClick={handleVoiceClick}
+                        onClick={
+                          isCorrectingVoiceInput
+                            ? cancelVoiceInput
+                            : handleVoiceClick
+                        }
                         className={cn(
                           showCompactLayout
                             ? COMPACT_PROMPT_ACTION_BUTTON_CLASS
@@ -3350,7 +3471,13 @@ export function PromptBoxInternal({
                           "transition-colors",
                         )}
                       >
-                        <Icon name="Mic" className="size-4" />
+                        <Icon
+                          name={isCorrectingVoiceInput ? "Spinner" : "Mic"}
+                          className={cn(
+                            "size-4",
+                            isCorrectingVoiceInput && "animate-spin",
+                          )}
+                        />
                       </Button>
                     ) : (
                       <PromptSubmitButton

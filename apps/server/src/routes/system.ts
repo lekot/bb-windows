@@ -8,13 +8,13 @@ import {
   getAppSettings,
   getAppKeybindingOverrides,
   getExperiments,
-  getStoredFaviconColor,
-  getStoredThemeId,
+  getStoredAppearance,
   hasActiveThreadAttention,
   setAppSettings,
   setAppKeybindingOverrides,
   setExperiments,
   setStoredAppearance,
+  type StoredAppearance,
 } from "@bb/db";
 import {
   applyAppKeybindingOverrides,
@@ -54,6 +54,10 @@ import {
   resolveVoiceTranscriptionEnabled,
   transcribeVoiceInput,
 } from "../services/ai/voice-transcription.js";
+import {
+  correctVoiceText,
+  resolveVoiceCorrectionEnabled,
+} from "../services/ai/voice-correction.js";
 import {
   listSystemProviderInfos,
   resolveSystemExecutionOptions,
@@ -160,22 +164,25 @@ export function registerSystemRoutes(
   }
 
   async function resolveSelectedTheme(
-    themeId: string,
-    faviconColor: AppTheme["faviconColor"],
+    stored: StoredAppearance,
   ): Promise<AppTheme> {
+    const { themeId, faviconColor, typographyProfile, fontScalePercent } =
+      stored;
+    const typography = { typographyProfile, fontScalePercent };
     const pluginCss = await pluginService.readThemeCss(themeId);
     if (pluginCss !== null) {
       return {
         themeId,
         customCss: pluginCss,
         faviconColor,
+        ...typography,
         resolvedCodeTheme: resolveCodeTheme(
           pluginService.readThemeCodeTheme(themeId),
           themeId,
         ),
       };
     }
-    return resolveAppTheme(themeRoot, themeId, faviconColor);
+    return resolveAppTheme(themeRoot, themeId, faviconColor, typography);
   }
 
   async function buildSystemConfigResponse(serverUrl: string) {
@@ -197,10 +204,7 @@ export function registerSystemRoutes(
       defaultKeybindings: DEFAULT_APP_KEYBINDINGS,
       keybindingOverrides,
       experiments: getExperiments(deps.db),
-      appearance: await resolveSelectedTheme(
-        getStoredThemeId(deps.db),
-        getStoredFaviconColor(deps.db),
-      ),
+      appearance: await resolveSelectedTheme(getStoredAppearance(deps.db)),
       customThemes: listCustomThemeNames(themeRoot),
       pluginThemes: pluginService.listThemes(),
       featureFlags: deps.config.featureFlags,
@@ -212,6 +216,7 @@ export function registerSystemRoutes(
         primaryHostId === null
           ? null
           : deps.hub.getDaemonPlatformForHost(primaryHostId),
+      voiceCorrectionEnabled: resolveVoiceCorrectionEnabled(deps),
       voiceTranscriptionEnabled: resolveVoiceTranscriptionEnabled(deps),
       aiServices: {
         inference: deps.config.inferenceModel,
@@ -314,17 +319,23 @@ export function registerSystemRoutes(
   put(routes.appearance, async (context, payload) => {
     const { themeId, faviconColor } = payload;
     await requireKnownTheme(themeId);
-    setStoredAppearance(deps.db, { themeId, faviconColor });
+    const stored = getStoredAppearance(deps.db);
+    const nextAppearance: StoredAppearance = {
+      themeId,
+      faviconColor,
+      typographyProfile: payload.typographyProfile ?? stored.typographyProfile,
+      fontScalePercent: payload.fontScalePercent ?? stored.fontScalePercent,
+    };
+    setStoredAppearance(deps.db, nextAppearance);
     deps.hub.notifySystem(["config-changed"]);
-    return context.json(await resolveSelectedTheme(themeId, faviconColor));
+    return context.json(await resolveSelectedTheme(nextAppearance));
   });
 
   get(routes.resolveTheme, async (context) => {
     const themeId = context.req.param("id");
     await requireKnownTheme(themeId);
-    return context.json(
-      await resolveSelectedTheme(themeId, getStoredFaviconColor(deps.db)),
-    );
+    const stored = getStoredAppearance(deps.db);
+    return context.json(await resolveSelectedTheme({ ...stored, themeId }));
   });
 
   get(routes.themes, async (context) =>
@@ -332,10 +343,7 @@ export function registerSystemRoutes(
       dir: themeRoot,
       custom: listCustomThemeNames(themeRoot),
       plugins: pluginService.listThemes(),
-      active: await resolveSelectedTheme(
-        getStoredThemeId(deps.db),
-        getStoredFaviconColor(deps.db),
-      ),
+      active: await resolveSelectedTheme(getStoredAppearance(deps.db)),
     }),
   );
 
@@ -592,6 +600,15 @@ export function registerSystemRoutes(
       }),
     });
   });
+
+  post(routes.voiceCorrection, async (context, body) =>
+    context.json(
+      await correctVoiceText(deps, {
+        text: body.text,
+        signal: context.req.raw.signal,
+      }),
+    ),
+  );
 
   get(routes.version, async (context, query) =>
     context.json(

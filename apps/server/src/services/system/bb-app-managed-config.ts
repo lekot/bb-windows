@@ -117,6 +117,29 @@ export function applyBbAppManagedConfig(
     managedConfig.BB_TRANSCRIPTION !== undefined
       ? validateTranscriptionModel(managedConfig.BB_TRANSCRIPTION)
       : args.baseConfig.transcriptionModel;
+  args.targetConfig.localWhisperUrl =
+    managedEnv.BB_LOCAL_WHISPER_URL !== undefined
+      ? validateOptionalUrl(
+          "BB_LOCAL_WHISPER_URL",
+          managedEnv.BB_LOCAL_WHISPER_URL,
+        )
+      : args.baseConfig.localWhisperUrl;
+  args.targetConfig.localWhisperLanguage =
+    managedEnv.BB_LOCAL_WHISPER_LANGUAGE?.trim() ||
+    args.baseConfig.localWhisperLanguage;
+  args.targetConfig.voiceCorrectionModel =
+    managedEnv.BB_VOICE_CORRECTION_MODEL?.trim() ||
+    args.baseConfig.voiceCorrectionModel;
+  args.targetConfig.voiceCorrectionUrl =
+    managedEnv.BB_VOICE_CORRECTION_URL !== undefined
+      ? validateOptionalUrl(
+          "BB_VOICE_CORRECTION_URL",
+          managedEnv.BB_VOICE_CORRECTION_URL,
+        )
+      : args.baseConfig.voiceCorrectionUrl;
+  args.targetConfig.voiceCorrectionApiKey =
+    managedEnv.BB_VOICE_CORRECTION_API_KEY ??
+    args.baseConfig.voiceCorrectionApiKey;
   args.targetConfig.openAiApiKey =
     managedEnv.OPENAI_API_KEY ?? args.baseConfig.openAiApiKey;
 

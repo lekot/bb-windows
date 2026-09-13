@@ -354,11 +354,66 @@ function readNewlineDelimitedLines(input, onLine) {
 // Player
 // ---------------------------------------------------------------------------
 
+function recordedModelIds(recordingDir) {
+  const models = new Map();
+  for (const entry of readLane(recordingDir, "bridge→runtime")) {
+    let message;
+    try {
+      message = JSON.parse(entry.line);
+    } catch {
+      continue;
+    }
+    const listed = message?.result?.models;
+    if (!Array.isArray(listed)) continue;
+    for (const model of listed) {
+      const id = typeof model?.model === "string" ? model.model : model?.id;
+      if (typeof id !== "string" || id.length === 0) continue;
+      const displayName =
+        typeof model?.displayName === "string" && model.displayName.length > 0
+          ? model.displayName
+          : id;
+      if (!models.has(id)) models.set(id, displayName);
+    }
+  }
+  if (models.size > 0) return models;
+  for (const entry of readLane(recordingDir, "runtime→bridge")) {
+    let message;
+    try {
+      message = JSON.parse(entry.line);
+    } catch {
+      continue;
+    }
+    const spec =
+      message?.params?.options?.providerOptions?.acpLaunchSpec ??
+      message?.params?.providerOptions?.acpLaunchSpec;
+    const primary = spec?.modelCli?.primaryModels;
+    if (!Array.isArray(primary)) continue;
+    for (const id of primary) {
+      if (typeof id === "string" && id.length > 0 && !models.has(id)) {
+        models.set(id, id);
+      }
+    }
+  }
+  return models;
+}
+
 function main() {
   // A bridge's install gate may probe `<cli> --version` through the replay
   // command; answer like a CLI instead of claiming a segment and waiting.
   if (process.argv.includes("--version")) {
     process.stdout.write("0.0.0-replay\n");
+    return;
+  }
+  if (process.argv.includes("--replay-list-models")) {
+    const recordingIndex = process.argv.indexOf("--recording");
+    const recordingDir =
+      recordingIndex === -1 ? undefined : process.argv[recordingIndex + 1];
+    if (recordingDir === undefined) {
+      throw new Error("usage: --recording <dir> --replay-list-models");
+    }
+    for (const [id, displayName] of recordedModelIds(recordingDir)) {
+      process.stdout.write(`${id} - ${displayName}\n`);
+    }
     return;
   }
   const args = parseArgs(process.argv.slice(2));

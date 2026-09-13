@@ -38,7 +38,10 @@ import {
   threads,
 } from "@bb/db";
 import {
+  INVALID_PROJECT_PATH_MESSAGE,
+  isAbsoluteProjectPath,
   jsonValueSchema,
+  normalizeProjectPathInput,
   type Environment,
   type EnvironmentMachineSelection,
   type Host,
@@ -349,14 +352,16 @@ async function runCreate(
               const path = z
                 .string()
                 .min(1)
-                .startsWith("/")
+                .refine((path) => isAbsoluteProjectPath(path), {
+                  message: INVALID_PROJECT_PATH_MESSAGE,
+                })
                 .refine((path) => !path.includes("\0"))
                 .parse(value);
               if (signal.aborted) return false;
               return claimEnvironmentPath(
                 deps.db,
                 provisioning,
-                path.replace(/\/+$/u, "") || "/",
+                normalizeProjectPathInput(path),
               );
             },
             previous:

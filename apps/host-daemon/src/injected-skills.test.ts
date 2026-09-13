@@ -227,9 +227,12 @@ describe("injected skill staging", () => {
     await expect(readFile(stagedScript, "utf8")).resolves.toBe(
       "#!/bin/sh\necho synced\n",
     );
-    await expect(
-      lstat(stagedScript).then((stat) => stat.mode & 0o777),
-    ).resolves.toBe(0o755);
+    const stagedMode = (await lstat(stagedScript)).mode;
+    if (process.platform === "win32") {
+      expect(stagedMode & 0o222).not.toBe(0);
+    } else {
+      expect(stagedMode & 0o777).toBe(0o755);
+    }
     expect(fetchSkillTree).toHaveBeenCalledTimes(1);
     expect(fetchSkillTree).toHaveBeenCalledWith(payload.treeHash);
   });

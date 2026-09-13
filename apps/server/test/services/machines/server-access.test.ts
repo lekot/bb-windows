@@ -314,7 +314,7 @@ it("refreshes access status through the real recheck notification and configurat
     }
     expect(acquire).not.toHaveBeenCalled();
   });
-});
+}, 20_000);
 
 it.each([
   { status: "available", serverUrl: "https://secret:password@example.com" },

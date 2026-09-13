@@ -47,6 +47,7 @@ import {
 } from "../../services/lib/entity-lookup.js";
 import { listRunningThreadsWithIntendedHosts } from "../../services/threads/dispatch-attempt.js";
 import { dispatchThreadRenameCommand } from "../../services/threads/thread-commands.js";
+import { adoptNativeSession } from "../../services/threads/native-session-intent.js";
 import {
   finalizeStoppedThread,
   requestActiveRuntimeThreadStopIfNeeded,
@@ -385,6 +386,13 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
       assertValidParentThread(deps, {
         childThreadId: thread.id,
         parentThreadId: payload.parentThreadId,
+      });
+    }
+
+    if (payload.adoptNativeSessionId !== undefined) {
+      await adoptNativeSession(deps, {
+        sessionId: payload.adoptNativeSessionId,
+        threadId: thread.id,
       });
     }
 

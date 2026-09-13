@@ -1,8 +1,8 @@
 ---
 kind: instruction
 title: bb Guide — Customization
-summary: Command reference for customizing the bb app color palette, keyboard shortcuts, and mobile push notifications.
-intent: Explain the CLI theme surface, server-backed app customization, and push-notification device registration.
+summary: Command reference for customizing the bb app color palette, typography, keyboard shortcuts, and mobile push notifications.
+intent: Explain the CLI theme and typography surfaces, server-backed app customization, and push-notification device registration.
 editingNotes: Keep flags accurate against the CLI implementation. Theme details live in the bb-cli skill's references/theming.md.
 ---
 Customization commands
@@ -40,6 +40,26 @@ Hovering a palette in Settings → Appearance previews it live in that window
 without saving; `bb theme show <id>` is the CLI counterpart.
 
 Add --json to any theme command for machine-readable output.
+
+Typography — profiles and text scale
+
+`bb typography` controls the typography axis: font families and density for
+UI text, headings, and code, plus a global text scale. It is orthogonal to the
+color palette (`bb theme`) and to light/dark mode. Profiles are `standard`
+(Inter + system mono), `compact` (denser), `readable` (roomier, JetBrains Mono
+code), `editorial` (Golos Text headings), and `techno` (JetBrains Mono UI). The
+text scale runs 90–110% in 5% steps and never scales the 10px chrome
+micro-copy. Like the palette, the selection is persisted server-side, applied
+live to every open window, and pre-painted from a local mirror on reload.
+
+  bb typography list             Profiles and the active selection
+  bb typography set <profile>    Switch profile; preserve palette, favicon, scale
+  bb typography scale <percent>  Set the text scale (90–110, snapped to 5%)
+  bb typography reset            Standard profile at 100%
+
+The same controls are in Settings → Appearance, with a quick "Aa" menu in the
+sidebar footer and a side-by-side Typography lab in the Theme Preview panel.
+Add --json to any typography command for machine-readable output.
 
 Packaged launcher settings
 
@@ -205,11 +225,20 @@ permission; OS notification settings still control whether a banner appears.
 Host files and voice transcription
 
   bb file read|write|list|paths|mkdir|move|remove ...
+  bb voice correct <text> [--json]
   bb voice transcribe <audio-file> [--prompt <context>]
 
 Voice transcription uses the `BB_TRANSCRIPTION` model, which defaults to
 `codex/gpt-transcribe`. Override it with
 `bb-app config set BB_TRANSCRIPTION <provider/model>`.
+
+Set `BB_TRANSCRIPTION` to `local-whisper/<name>` to send audio to
+`BB_LOCAL_WHISPER_URL` (default `http://127.0.0.1:9003/asr`) with
+`BB_LOCAL_WHISPER_LANGUAGE` (default `ru`). Optional asynchronous cleanup of
+the inserted transcript uses the OpenAI-compatible endpoint in
+`BB_VOICE_CORRECTION_URL`, model `BB_VOICE_CORRECTION_MODEL` (default
+`glm-5.3-flash`), and `BB_VOICE_CORRECTION_API_KEY`. `bb voice correct` exposes
+the same correction through the CLI.
 
 `bb file` supports `--host` for remote machines and `--root` on mutating
 commands to confine access beneath an absolute directory. `bb file list` and

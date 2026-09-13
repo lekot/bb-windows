@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { resolvePluginNpmCli } from "@bb/plugin-build";
 import {
   createBbAppArtifactService,
   resolveBbAppPackage,
@@ -15,6 +16,20 @@ const execFileAsync = promisify(execFile);
 const roots: string[] = [];
 const ARTIFACT_LIFECYCLE_TIMEOUT_MS = 15_000;
 const MODES = ["repo-src", "repo-dist", "packaged"] as const;
+
+async function runArtifactCommand(
+  command: string,
+  args: readonly string[],
+  cwd = process.cwd(),
+): Promise<string> {
+  const npmCliPath = command === "npm" ? resolvePluginNpmCli() : null;
+  const result = await execFileAsync(
+    npmCliPath === null ? command : process.execPath,
+    npmCliPath === null ? [...args] : [npmCliPath, ...args],
+    { cwd, encoding: "utf8" },
+  );
+  return result.stdout.replaceAll("\r\n", "\n");
+}
 const packageJson = {
   name: "bb-app",
   version: "1.2.3-test",
@@ -114,8 +129,8 @@ describe("bb-app artifact service (desktop packaging)", () => {
       await expect(service.getVersion()).resolves.toBe("1.2.3-test");
       const artifact = await service.getArtifact();
       const listing = (
-        await execFileAsync("tar", ["-tzf", artifact.path])
-      ).stdout.split("\n");
+        await runArtifactCommand("tar", ["-tzf", artifact.path])
+      ).split("\n");
       expect(listing).toEqual(
         expect.arrayContaining([
           "package/package.json",
@@ -168,7 +183,7 @@ describe("bb-app artifact service (desktop packaging)", () => {
     });
 
     await expect(service.getArtifact()).rejects.toMatchObject({
-      code: expect.stringMatching(/^(EISDIR|ENOTSUP)$/u),
+      code: expect.stringMatching(/^(EISDIR|ENOTSUP|EPERM)$/u),
       path: readmePath,
     });
   });
@@ -190,7 +205,7 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
           await test.refreshHostPackage();
           return "built";
         }
-        return (await execFileAsync(command, [...args], { cwd })).stdout;
+        return runArtifactCommand(command, args, cwd);
       };
       const resolved = await resolveBbAppPackage(
         pathToFileURL(test.serverEntry).href,
@@ -206,8 +221,8 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
       const artifact = await service.getArtifact();
       await expect(service.getVersion()).resolves.toBe("1.2.3-test");
       const listing = (
-        await execFileAsync("tar", ["-tzf", artifact.path])
-      ).stdout.split("\n");
+        await runArtifactCommand("tar", ["-tzf", artifact.path])
+      ).split("\n");
       expect(listing).toContain("package/package.json");
       expect(listing).toContain("package/dist/bb-app.js");
       expect(listing).toContain("package/dist/bb.js");
@@ -221,13 +236,11 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
         false,
       );
       const packedPackageJson = JSON.parse(
-        (
-          await execFileAsync("tar", [
-            "-xOzf",
-            artifact.path,
-            "package/package.json",
-          ])
-        ).stdout,
+        await runArtifactCommand("tar", [
+          "-xOzf",
+          artifact.path,
+          "package/package.json",
+        ]),
       );
       expect(packedPackageJson).toMatchObject({
         name: "bb-app",
@@ -268,7 +281,7 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
           await test.refreshHostPackage();
           return "built";
         }
-        return (await execFileAsync(command, [...args], { cwd })).stdout;
+        return runArtifactCommand(command, args, cwd);
       };
       const options = {
         dataDir: join(test.root, "data"),
@@ -284,13 +297,11 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
       expect(second.path).not.toBe(first.path);
       expect(second.digest).not.toBe(first.digest);
       expect(
-        (
-          await execFileAsync("tar", [
-            "-xOzf",
-            second.path,
-            "package/README.md",
-          ])
-        ).stdout,
+        await runArtifactCommand("tar", [
+          "-xOzf",
+          second.path,
+          "package/README.md",
+        ]),
       ).toBe("updated\n");
       expect(calls.filter((call) => call.command === "npm")).toHaveLength(2);
     },
@@ -306,7 +317,7 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
           await test.refreshHostPackage();
           return "built";
         }
-        return (await execFileAsync(command, [...args], { cwd })).stdout;
+        return runArtifactCommand(command, args, cwd);
       };
       const baseOptions = {
         dataDir: join(test.root, "data"),
@@ -340,7 +351,7 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
           return "built";
         }
         if (failNextPack) throw new Error("npm pack exploded");
-        return (await execFileAsync(command, [...args], { cwd })).stdout;
+        return runArtifactCommand(command, args, cwd);
       };
       const options = {
         dataDir: join(test.root, "data"),
@@ -355,21 +366,22 @@ describe.each(MODES)("bb-app artifact service (%s)", (mode) => {
       const service = createBbAppArtifactService(options);
       await expect(service.getArtifact()).rejects.toThrow("npm pack exploded");
       expect(
-        (await execFileAsync("tar", ["-xOzf", first.path, "package/README.md"]))
-          .stdout,
+        await runArtifactCommand("tar", [
+          "-xOzf",
+          first.path,
+          "package/README.md",
+        ]),
       ).toBe("fixture\n");
 
       failNextPack = false;
       const second = await service.getArtifact();
       expect(second.path).not.toBe(first.path);
       expect(
-        (
-          await execFileAsync("tar", [
-            "-xOzf",
-            second.path,
-            "package/README.md",
-          ])
-        ).stdout,
+        await runArtifactCommand("tar", [
+          "-xOzf",
+          second.path,
+          "package/README.md",
+        ]),
       ).toBe("updated\n");
     },
     ARTIFACT_LIFECYCLE_TIMEOUT_MS,

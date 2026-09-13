@@ -93,9 +93,38 @@
         // theme.css keys every dark token off the `dark` class, so add it
         // before the stylesheet applies. Otherwise the first paint is the
         // light palette until main.tsx (behind ~1.5 MB of JS) toggles it,
-        // which reads as a white flash on every cold load. useTheme.ts owns
-        // the class afterwards and reconciles it with the same preference.
+        // which reads as a white flash on every cold load. useTheme.ts owns the
+        // class afterwards and reconciles it with the same preference.
         if (darkTheme) document.documentElement.classList.add("dark");
+        // Same contract for the typography axis: mirror the server appearance
+        // cached by applyTypography from the previous load, so the profile's
+        // font stacks and the text scale apply at first paint instead of
+        // snapping after main.tsx boots. useTypography reconciles the mirror
+        // with the server appearance once the system config loads.
+        try {
+          var typography = JSON.parse(
+            localStorage.getItem("bb.typography") || "null",
+          );
+          if (
+            typography &&
+            ["standard", "compact", "readable", "editorial", "techno"].indexOf(
+              typography.profile,
+            ) !== -1
+          ) {
+            if (typography.profile !== "standard") {
+              document.documentElement.dataset.bbTypography =
+                typography.profile;
+            }
+            var scale = Number(typography.scalePercent);
+            if (Number.isFinite(scale)) {
+              var clamped = Math.min(110, Math.max(90, Math.round(scale)));
+              document.documentElement.style.setProperty(
+                "--bb-font-scale",
+                String(clamped / 100),
+              );
+            }
+          }
+        } catch {}
       })();
     </script>
   </head>

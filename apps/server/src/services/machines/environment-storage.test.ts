@@ -33,7 +33,7 @@ it("stores encrypted values that survive a database reopen", async () => {
   expect(JSON.stringify(persisted)).not.toContain("private-");
   expect(
     (await stat(join(dataDir, "machine-environment-key"))).mode & 0o777,
-  ).toBe(0o600);
+  ).toBe(process.platform === "win32" ? 0o666 : 0o600);
   db.$client.close();
   db = createConnection(":memory:");
   migrate(db);

@@ -24,6 +24,7 @@ interface TranscribeVoiceInputArgs {
 type OptionalJsonValue = JsonValue | null | undefined;
 
 const OPENAI_TRANSCRIPTION_PROVIDER = "openai";
+const LOCAL_WHISPER_TRANSCRIPTION_PROVIDER = "local-whisper";
 const VOICE_TRANSCRIPTION_MAX_BYTES = 25 * 1024 * 1024;
 const AI_SERVICE_VOICE_MAX_BYTES = 5 * 1024 * 1024;
 const voiceTranscriptionSchema = Type.Object({ text: Type.String() });
@@ -58,6 +59,9 @@ export function resolveVoiceTranscriptionEnabled(
   const modelInfo = parseTranscriptionModel(deps.config.transcriptionModel);
   if (modelInfo.provider === OPENAI_TRANSCRIPTION_PROVIDER) {
     return deps.config.openAiApiKey.length > 0;
+  }
+  if (modelInfo.provider === LOCAL_WHISPER_TRANSCRIPTION_PROVIDER) {
+    return deps.config.localWhisperUrl.length > 0;
   }
   if (voiceService(deps, modelInfo) !== null) {
     return isPrimaryHostConnected(deps);
@@ -261,6 +265,68 @@ async function transcribeWithOpenAi(
   return text;
 }
 
+async function transcribeWithLocalWhisper(
+  deps: LoggedWorkSessionDeps,
+  args: TranscribeVoiceInputArgs,
+): Promise<string> {
+  if (deps.config.localWhisperUrl.length === 0) {
+    throw new ApiError(
+      501,
+      "not_configured",
+      "Local Whisper transcription requires BB_LOCAL_WHISPER_URL",
+    );
+  }
+
+  const url = new URL(deps.config.localWhisperUrl);
+  url.searchParams.set("task", "transcribe");
+  url.searchParams.set("language", deps.config.localWhisperLanguage);
+  url.searchParams.set("output", "json");
+  const formData = new FormData();
+  formData.set("audio_file", args.file, args.file.name || "voice-input");
+
+  const abortController = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    abortController.abort();
+  }, INFERENCE_POLICY.voiceTranscription.timeoutMs);
+  timer.unref();
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      body: formData,
+      signal: abortController.signal,
+    });
+  } catch (error) {
+    if (timedOut) {
+      throw buildTranscriptionTimeoutError();
+    }
+    deps.logger.warn(
+      runtimeErrorLogFields(deps.config, error),
+      "Local Whisper transcription request failed",
+    );
+    throw buildTranscriptionUnavailableError();
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const payload = await readJsonValue(response);
+  if (!response.ok) {
+    throw new ApiError(
+      502,
+      "provider_rpc_error",
+      jsonStringProperty(payload, "detail") ?? "Voice transcription failed",
+    );
+  }
+  const text = jsonStringProperty(payload, "text")?.trim();
+  if (!text) {
+    throw new ApiError(502, "provider_rpc_error", "Voice transcription failed");
+  }
+  return text;
+}
+
 export async function transcribeVoiceInput(
   deps: LoggedWorkSessionDeps,
   args: TranscribeVoiceInputArgs,
@@ -275,6 +341,9 @@ export async function transcribeVoiceInput(
   const modelInfo = parseTranscriptionModel(deps.config.transcriptionModel);
   if (modelInfo.provider === OPENAI_TRANSCRIPTION_PROVIDER) {
     return transcribeWithOpenAi(deps, modelInfo, args);
+  }
+  if (modelInfo.provider === LOCAL_WHISPER_TRANSCRIPTION_PROVIDER) {
+    return transcribeWithLocalWhisper(deps, args);
   }
   const service = voiceService(deps, modelInfo);
   if (service !== null) {

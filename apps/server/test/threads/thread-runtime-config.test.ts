@@ -275,7 +275,7 @@ describe("thread runtime config", () => {
   it.each([
     {
       expectedSpec: {
-        displayName: "opencode",
+        displayName: "DeepSeek",
         command: "opencode",
         args: ["acp"],
         env: {},
@@ -1165,7 +1165,7 @@ describe("thread runtime config", () => {
 
       expect(runtimeConfig.workspacePath).toBe("/tmp/runtime-project-root");
       expect(runtimeConfig.threadStoragePath).toBe(
-        `/tmp/bb-host-data/${hostId}/thread-storage/${thread.id}`,
+        path.join("/tmp/bb-host-data", hostId, "thread-storage", thread.id),
       );
       expect(runtimeConfig.dynamicTools).toEqual([
         expect.objectContaining({
@@ -1238,7 +1238,7 @@ describe("thread runtime config", () => {
         "You are working inside bb, an agentic IDE",
       );
       expect(runtimeConfig.instructions).toContain(
-        "The following workspace instructions come from .bb/AGENTS.md:",
+        `The following workspace instructions come from ${path.join(".bb", "AGENTS.md")}:`,
       );
       expect(runtimeConfig.instructions).toContain(
         "Always run the smoke test before pushing.",
@@ -1454,7 +1454,7 @@ describe("thread runtime config", () => {
           id: "host-runtime-shared-skills",
         });
         const workspacePath = "/remote/runtime-shared-skills";
-        const skillFilePath = path.join(
+        const skillFilePath = path.posix.join(
           workspacePath,
           ".agents",
           "skills",
@@ -1501,7 +1501,7 @@ describe("thread runtime config", () => {
           sourceType: "shared-project",
           name: "portable-review",
           description: "Review code from one shared source.",
-          sourceRootPath: path.dirname(skillFilePath),
+          sourceRootPath: path.posix.dirname(skillFilePath),
           skillFilePath,
         });
       },
@@ -1556,8 +1556,7 @@ describe("thread runtime config", () => {
 
       const userSource =
         "The following user instructions come from <dataDir>/AGENTS.md:";
-      const workspaceSource =
-        "The following workspace instructions come from .bb/AGENTS.md:";
+      const workspaceSource = `The following workspace instructions come from ${path.join(".bb", "AGENTS.md")}:`;
       expect(runtimeConfig.instructions).toContain(userSource);
       expect(runtimeConfig.instructions).toContain(
         "Prefer concise progress updates.",

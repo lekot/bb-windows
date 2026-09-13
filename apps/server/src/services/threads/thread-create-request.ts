@@ -33,6 +33,9 @@ export interface ThreadCreateServiceRequestInput {
   permissionMode?: CreateThreadRequest["permissionMode"];
   projectId: string;
   providerId?: CreateThreadRequest["providerId"];
+  claudeSourceSessionId?: CreateThreadRequest["claudeSourceSessionId"];
+  claudeResumeSessionId?: CreateThreadRequest["claudeResumeSessionId"];
+  nativeResumeSessionId?: CreateThreadRequest["nativeResumeSessionId"];
   reasoningLevel?: CreateThreadRequest["reasoningLevel"];
   serviceTier?: CreateThreadRequest["serviceTier"];
   sourceSeqEnd?: CreateThreadRequest["sourceSeqEnd"];

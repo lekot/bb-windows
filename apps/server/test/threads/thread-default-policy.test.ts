@@ -115,6 +115,7 @@ describe("resolveCreateThreadExecutionDefaults", () => {
       "codex",
       "acp-cursor",
       "acp-opencode",
+      "acp-deepseek-harness",
       "acp-omp",
       "acp-grok",
       "acp-hermes-agent",

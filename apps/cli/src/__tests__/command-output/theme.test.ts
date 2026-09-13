@@ -31,6 +31,8 @@ describe("bb theme commands", () => {
         appearance: {
           themeId,
           faviconColor,
+          typographyProfile: "editorial",
+          fontScalePercent: 105,
           customCss: null,
           resolvedCodeTheme: {
             dark: "pierre-dark",
@@ -44,13 +46,18 @@ describe("bb theme commands", () => {
     return put;
   }
 
-  it("preserves the favicon color for a theme-only update", async () => {
+  it("preserves the favicon color and typography for a theme-only update", async () => {
     const put = stubAppearance();
 
     await runCommand(["theme", "set", "nord"], register);
 
     expect(put).toHaveBeenCalledWith({
-      json: { themeId: "nord", faviconColor: "purple" },
+      json: {
+        themeId: "nord",
+        faviconColor: "purple",
+        typographyProfile: "editorial",
+        fontScalePercent: 105,
+      },
     });
   });
 
@@ -103,7 +110,12 @@ describe("bb theme commands", () => {
     await runCommand(["theme", "reset"], register);
 
     expect(put).toHaveBeenCalledWith({
-      json: { themeId: "default", faviconColor: "pink" },
+      json: {
+        themeId: "default",
+        faviconColor: "pink",
+        typographyProfile: "editorial",
+        fontScalePercent: 105,
+      },
     });
   });
 

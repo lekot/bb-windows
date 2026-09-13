@@ -213,6 +213,18 @@ export function readThreadProvisionContext(
   );
 }
 
+export function isThreadStartupDispatched(
+  db: DbConnection | DbTransaction,
+  threadId: string,
+): boolean {
+  const stored = getThreadStartupContext(db, threadId);
+  if (stored === null) return false;
+  const parsed = z
+    .object({ kind: z.enum(["pending", "provisioning", "dispatched"]) })
+    .safeParse(JSON.parse(stored));
+  return parsed.success && parsed.data.kind === "dispatched";
+}
+
 export function createThreadStartup(
   request: ThreadProvisionContext["request"],
 ): ThreadProvisionContext {

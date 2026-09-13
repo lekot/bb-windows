@@ -361,6 +361,11 @@ describe("buildPluginProviderRegistration", () => {
         icon: undefined,
       },
       {
+        id: "acp-deepseek-harness",
+        logoUrl: "/api/v1/system/providers/acp-deepseek-harness/logo",
+        icon: undefined,
+      },
+      {
         id: "acp-omp",
         logoUrl: "/api/v1/system/providers/acp-omp/logo",
         icon: undefined,

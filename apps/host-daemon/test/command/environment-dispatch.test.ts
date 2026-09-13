@@ -494,7 +494,7 @@ it("cancels setup with contributions even when another attach is waiting", async
   const harness = createHarness({ workspacePath: sourcePath });
   await fs.writeFile(
     `${sourcePath}/.bb-env-setup.sh`,
-    'printf "%s" "$SETUP_VALUE" > started\nsleep 120\nprintf unsafe > after-cancel\n',
+    'printf "%s" "$SETUP_VALUE" > started\nwhile :; do :; done\nprintf unsafe > after-cancel\n',
   );
   const command = {
     type: "environment.attach" as const,

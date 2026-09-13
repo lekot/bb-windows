@@ -53,6 +53,7 @@ import { useAppThemePreview } from "@/hooks/useAppThemePreview";
 import { UsageLimitsSettingsSection } from "@/components/settings/UsageLimitsSettingsSection";
 import { ProvidersSettingsSection } from "@/components/settings/ProvidersSettingsSection";
 import { CodeRendererSettings } from "@/components/settings/CodeRendererSettings";
+import { TypographySettingsControl } from "@/components/settings/TypographySettings";
 import { SidebarThreadListSetting } from "@/components/settings/SidebarThreadListSetting";
 import { SidebarFooterSettings } from "@/components/settings/SidebarFooterSettings";
 import { SidebarNavigationSetting } from "@/components/settings/SidebarNavigationSetting";
@@ -79,6 +80,7 @@ import {
   useUpdateExperiments,
 } from "@/hooks/mutations/settings-mutations";
 import { useSystemConfig } from "@/hooks/queries/system-queries";
+import { useTypographySelection } from "@/hooks/useTypographySelection";
 import { useWorkspaceOpenTargets } from "@/hooks/useWorkspaceOpenTargets";
 import { isDesktopBrowserAvailable } from "@/lib/bb-desktop";
 import {
@@ -161,6 +163,10 @@ interface AppearanceSettingsSectionProps {
   onCreatePalette: () => void;
   onFaviconColorChange: (faviconColor: FaviconColorPreference) => void;
   onThemePreferenceChange: (themePreference: ThemePreference) => void;
+  onTypographyChange: (next: {
+    typographyProfile: AppTheme["typographyProfile"];
+    fontScalePercent: AppTheme["fontScalePercent"];
+  }) => void;
   themePreference: ThemePreference;
 }
 
@@ -680,6 +686,7 @@ export function AppearanceSettingsSection({
   onFaviconColorChange,
   onCreatePalette,
   onThemePreferenceChange,
+  onTypographyChange,
   themePreference,
 }: AppearanceSettingsSectionProps) {
   const paletteSelectedRef = useRef(false);
@@ -697,6 +704,12 @@ export function AppearanceSettingsSection({
         <SidebarThreadListSetting />
         <SidebarNavigationSetting />
         <CodeRendererSettings />
+        <TypographySettingsControl
+          disabled={appearanceDisabled}
+          typographyProfile={appearance.typographyProfile}
+          fontScalePercent={appearance.fontScalePercent}
+          onTypographyChange={onTypographyChange}
+        />
         <SettingsWithControl label="Theme">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1082,6 +1095,7 @@ export function SettingsView() {
   const updateGeneralSettingsMutation = useUpdateGeneralSettings();
   const appearance = systemConfigQuery.data?.appearance ?? defaultAppTheme;
   const updateAppearanceMutation = useUpdateAppearance();
+  const typographySelection = useTypographySelection();
   const appThemePreview = useAppThemePreview();
   const location = useLocation();
   const { activePluginId, activeSection, hasUnknownSection } =
@@ -1159,6 +1173,7 @@ export function SettingsView() {
             faviconColor,
           })
         }
+        onTypographyChange={typographySelection.setTypography}
         onThemePreferenceChange={setPreferredTheme}
       />
     );

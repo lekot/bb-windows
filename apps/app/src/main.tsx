@@ -12,6 +12,7 @@ import { installForeignDomMutationGuard } from "./lib/foreign-dom-mutation-guard
 import { installAppQueryClientBrowserEvents } from "./lib/query-client";
 import { appQueryClient } from "./lib/app-query-client";
 import { applyCachedAppThemeCss } from "./lib/themes";
+import { applyCachedTypography } from "./lib/typography";
 import "./app.css";
 
 installForeignDomMutationGuard();
@@ -23,6 +24,7 @@ registerProviderCliInstallQueryClient(appQueryClient);
 
 initializePreferredTheme();
 applyCachedAppThemeCss();
+applyCachedTypography();
 initializeFavicon();
 
 createRoot(document.getElementById("root")!, {

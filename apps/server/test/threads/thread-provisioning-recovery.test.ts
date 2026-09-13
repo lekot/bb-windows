@@ -66,6 +66,39 @@ const THREAD_START_EXECUTION = {
 } satisfies ResolvedThreadExecutionOptions;
 
 describe("thread provisioning recovery", () => {
+  it("does not fail a thread whose startup was already dispatched", async () => {
+    await withTestHarness(async (harness) => {
+      const { host } = seedHostSession(harness.deps);
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+        path: "/tmp/dispatched-thread-start",
+        status: "ready",
+      });
+      const thread = seedThread(harness.deps, {
+        projectId: project.id,
+        environmentId: environment.id,
+        status: "starting",
+      });
+      setThreadStartupContext(harness.db, {
+        threadId: thread.id,
+        startupContext: JSON.stringify({ kind: "dispatched" }),
+      });
+
+      await advanceThreadProvisioning(harness.deps, { threadId: thread.id });
+
+      expect(getThread(harness.db, thread.id)?.status).toBe("starting");
+      expect(
+        listEvents(harness.db, { threadId: thread.id }).some(
+          (event) => event.type === "system/error",
+        ),
+      ).toBe(false);
+    });
+  });
+
   it("marks workspace-ready thread starts interrupted instead of reissuing RPC after restart", async () => {
     await withTestHarness(async (harness) => {
       const { host } = seedHostSession(harness.deps, {

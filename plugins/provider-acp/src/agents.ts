@@ -1,5 +1,8 @@
 import { z } from "zod";
-import type { PluginProviderReasoningLevel } from "@get-bb/plugin-sdk";
+import type {
+  PluginProviderNativeHistoryReader,
+  PluginProviderReasoningLevel,
+} from "@get-bb/plugin-sdk";
 import { experimental_acpLaunchSpecSchema } from "@get-bb/plugin-sdk/provider-bridge/acp";
 import type { AcpLaunchSpec } from "@get-bb/plugin-sdk/provider-bridge/acp";
 import type { AcpNativeRootsResolver } from "./native-roots/resolver.js";
@@ -31,7 +34,23 @@ export interface AcpAgentDefinition {
   providerUsage?: boolean;
   providerInstallation?: boolean;
   nativeRootsResolver?: AcpNativeRootsResolver;
+  nativeHistoryReader?: PluginProviderNativeHistoryReader;
+  reasoningLevelsOverride?: readonly PluginProviderReasoningLevel[];
 }
+
+const NATIVE_HISTORY_READERS_BY_SLUG: Record<
+  string,
+  PluginProviderNativeHistoryReader
+> = {
+  zcode: "zcode-sqlite",
+};
+
+const REASONING_LEVELS_BY_SLUG: Record<
+  string,
+  readonly PluginProviderReasoningLevel[]
+> = {
+  zcode: ["low", "high", "max"],
+};
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/u;
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
@@ -69,6 +88,12 @@ export function customAcpAgentDefinition(
     id: formatCustomAcpProviderId(agent.id),
     displayName: agent.displayName,
     icon: CUSTOM_AGENT_GLYPH,
+    ...(NATIVE_HISTORY_READERS_BY_SLUG[agent.id] === undefined
+      ? {}
+      : { nativeHistoryReader: NATIVE_HISTORY_READERS_BY_SLUG[agent.id] }),
+    ...(REASONING_LEVELS_BY_SLUG[agent.id] === undefined
+      ? {}
+      : { reasoningLevelsOverride: REASONING_LEVELS_BY_SLUG[agent.id] }),
     launch: {
       displayName: agent.displayName,
       command: agent.command,
@@ -94,6 +119,7 @@ export function customAcpAgentDefinition(
     visibility: "always",
     fork: "none",
     supportsManualCompaction: agent.supportsManualCompaction,
+    ...(agent.id === "zcode" ? { providerUsage: true } : {}),
   };
 }
 

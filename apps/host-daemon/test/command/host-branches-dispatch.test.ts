@@ -11,6 +11,12 @@ import {
 
 afterEach(cleanupTempDirs);
 
+function shellCommand(scriptPath: string): string {
+  return process.platform === "win32"
+    ? `sh "${scriptPath.replaceAll("\\", "/")}"`
+    : scriptPath;
+}
+
 async function initBranchRepo(): Promise<string> {
   const repoPath = await makeTempDir("bb-host-branches-repo-");
   await runGitCommand(["init", "-b", "develop"], { cwd: repoPath });
@@ -69,12 +75,13 @@ async function initStaleOriginMainRepo(): Promise<StaleOriginMainRepo> {
   const uploadPackPath = path.join(repoPath, "delayed-upload-pack.sh");
   await fs.writeFile(
     uploadPackPath,
-    `#!/bin/sh\ntouch ${JSON.stringify(refreshStartedPath)}\nwhile [ ! -f ${JSON.stringify(releaseRefreshPath)} ]; do sleep 0.01; done\nsleep 0.2\nexec git-upload-pack "$@"\n`,
+    `#!/bin/sh\ntouch ${JSON.stringify(refreshStartedPath)}\nwhile [ ! -f ${JSON.stringify(releaseRefreshPath)} ]; do sleep 0.01; done\nsleep 0.2\nexec git upload-pack "$@"\n`,
     { encoding: "utf8", mode: 0o755 },
   );
-  await runGitCommand(["config", "remote.origin.uploadpack", uploadPackPath], {
-    cwd: repoPath,
-  });
+  await runGitCommand(
+    ["config", "remote.origin.uploadpack", shellCommand(uploadPackPath)],
+    { cwd: repoPath },
+  );
   return { releaseRefreshPath, refreshStartedPath, repoPath };
 }
 
@@ -96,9 +103,12 @@ async function initSshRemoteRepo(): Promise<SshRemoteRepo> {
     ["remote", "add", "origin", "ssh://git.invalid/repo.git"],
     { cwd: repoPath },
   );
-  await runGitCommand(["config", "core.sshCommand", sshScriptPath], {
-    cwd: repoPath,
-  });
+  await runGitCommand(
+    ["config", "core.sshCommand", shellCommand(sshScriptPath)],
+    {
+      cwd: repoPath,
+    },
+  );
   return { repoPath, sshLogPath };
 }
 
@@ -576,11 +586,11 @@ describe("host.list_branch_options dispatch", () => {
     const uploadPackPath = path.join(repoPath, "delayed-upload-pack.sh");
     await fs.writeFile(
       uploadPackPath,
-      `#!/bin/sh\ntouch ${JSON.stringify(refreshStartedPath)}\nwhile [ ! -f ${JSON.stringify(releaseRefreshPath)} ]; do sleep 0.01; done\nexec git-upload-pack "$@"\n`,
+      `#!/bin/sh\ntouch ${JSON.stringify(refreshStartedPath)}\nwhile [ ! -f ${JSON.stringify(releaseRefreshPath)} ]; do sleep 0.01; done\nexec git upload-pack "$@"\n`,
       { encoding: "utf8", mode: 0o755 },
     );
     await runGitCommand(
-      ["config", "remote.origin.uploadpack", uploadPackPath],
+      ["config", "remote.origin.uploadpack", shellCommand(uploadPackPath)],
       {
         cwd: repoPath,
       },

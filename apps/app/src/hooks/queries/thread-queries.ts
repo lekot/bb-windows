@@ -96,10 +96,80 @@ interface QueryOptions {
 const THREAD_LIST_STALE_TIME_MS = 10_000;
 const THREAD_SEARCH_STALE_TIME_MS = 10_000;
 const THREAD_DETAIL_STALE_TIME_MS = 5_000;
+const THREAD_PROVISIONING_REFETCH_INTERVAL_MS = 1_000;
 const THREAD_MENTION_CANDIDATE_LIMIT = 200;
 const THREAD_SEARCH_DEBOUNCE_MS = 150;
 export const THREAD_SEARCH_LIMIT_PER_GROUP = 20;
 const THREAD_SEARCH_MIN_NON_WHITESPACE_CHARS = 2;
+
+export function shouldPollProvisioningThread(
+  thread: ThreadResponse | undefined,
+): boolean {
+  const displayStatus = thread?.runtime.displayStatus;
+  return (
+    displayStatus === "provisioning" ||
+    displayStatus === "starting" ||
+    displayStatus === "active" ||
+    displayStatus === "stopping" ||
+    displayStatus === "host-reconnecting" ||
+    displayStatus === "waiting-for-host"
+  );
+}
+
+export function shouldPollProvisioningTimeline(
+  timeline: ThreadTimelineResponse | undefined,
+): boolean {
+  return (
+    timeline?.rows.some(
+      (row) =>
+        row.kind === "system" &&
+        row.systemKind === "operation" &&
+        row.operationKind === "thread-provisioning" &&
+        row.status === "pending",
+    ) ?? false
+  );
+}
+
+export function shouldPollThreadTimeline(
+  timeline: ThreadTimelineResponse | undefined,
+  thread: ThreadResponse | undefined,
+): boolean {
+  if (shouldPollProvisioningTimeline(timeline)) {
+    return true;
+  }
+  if (shouldPollProvisioningThread(thread)) {
+    return true;
+  }
+  if (
+    timeline === undefined ||
+    (thread !== undefined && thread.runtime.displayStatus !== "idle")
+  ) {
+    return false;
+  }
+
+  let latestUserSequence = -1;
+  let latestAssistantSequence = -1;
+  for (const row of timeline.rows) {
+    if (row.kind !== "conversation") {
+      continue;
+    }
+    if (row.role === "user") {
+      latestUserSequence = Math.max(latestUserSequence, row.sourceSeqEnd);
+    } else {
+      latestAssistantSequence = Math.max(
+        latestAssistantSequence,
+        row.sourceSeqEnd,
+      );
+    }
+  }
+
+  // A socket reconnect can lose the completion publish after the detail query
+  // has already observed `idle`. Keep the timeline alive until it catches the
+  // assistant row belonging to the latest accepted prompt.
+  return (
+    latestUserSequence >= 0 && latestAssistantSequence < latestUserSequence
+  );
+}
 
 interface ThreadDetailBootstrapQueryOptions extends QueryOptions {
   timelinePrefetch?: boolean;
@@ -622,6 +692,10 @@ export function useThread(id: string, options?: QueryOptions) {
         signal,
       }),
     enabled,
+    refetchInterval: (query) =>
+      shouldPollProvisioningThread(query.state.data)
+        ? THREAD_PROVISIONING_REFETCH_INTERVAL_MS
+        : false,
     staleTime: THREAD_DETAIL_STALE_TIME_MS,
     refetchOnMount: options?.refetchOnMount ?? true,
     retry: shouldRetryTransientReadQuery,
@@ -646,6 +720,7 @@ function liftThreadListPlaceholder(
     activeBackgroundAgentCount: thread.activity.activeBackgroundAgentCount,
     canSpawnChild: false,
     queuedMessageCount: 0,
+    providerSessionId: null,
   };
 }
 
@@ -948,6 +1023,13 @@ export function useThreadTimeline(
       });
     },
     enabled,
+    refetchInterval: (query) =>
+      shouldPollThreadTimeline(
+        query.state.data,
+        queryClient.getQueryData<ThreadResponse>(threadQueryKey(id)),
+      )
+        ? THREAD_PROVISIONING_REFETCH_INTERVAL_MS
+        : false,
     refetchOnMount: options?.refetchOnMount ?? true,
     ...(options?.staleTime === undefined
       ? {}

@@ -52,6 +52,7 @@ import {
   type QueueWaitPluginDirectory,
 } from "../threads/queued-message-dispatch.js";
 import { deliverLegacyDeferredThreadMessages } from "../threads/legacy-deferred-messages.js";
+import { runNativeHistoryUnreadSweep } from "../threads/native-history-unread.js";
 import { runEventLoopWork, runEventLoopWorkSync } from "./event-loop-work.js";
 
 type DatabaseMaintenanceSweepDeps = Pick<AppDeps, "db" | "logger">;
@@ -60,13 +61,14 @@ interface PluginScheduleSweeper {
   sweepDueSchedules(now: number): Promise<void>;
 }
 
-type PeriodicSweepDeps = LoggedPendingInteractionWorkSessionDeps & {
+export type PeriodicSweepDeps = LoggedPendingInteractionWorkSessionDeps & {
   pluginSchedules: PluginScheduleSweeper;
   /** Liveness directory for `plugin:<id>` wait holders. */
   plugins: QueueWaitPluginDirectory;
 };
 
 const DATABASE_MAINTENANCE_CHECK_INTERVAL_MS = 60 * 60_000;
+const NATIVE_HISTORY_UNREAD_CHECK_INTERVAL_MS = 60_000;
 const COMPLETED_EVENT_OUTPUT_MIGRATION_MAX_ADVANCES_PER_SWEEP = 64;
 const RETAINED_EVENT_OUTPUT_EXPIRY_MAX_ADVANCES_PER_SWEEP = 256;
 const RETAINED_EVENT_OUTPUT_EXPIRY_BATCH_SIZE = 1;
@@ -561,6 +563,12 @@ const PERIODIC_SWEEP_JOBS: PeriodicSweepJob[] = [
     category: "maintenance",
     name: "database-maintenance",
     run: runDatabaseMaintenanceSweep,
+  },
+  {
+    cadenceMs: NATIVE_HISTORY_UNREAD_CHECK_INTERVAL_MS,
+    category: "scheduler",
+    name: "native-history-unread",
+    run: (deps) => runNativeHistoryUnreadSweep(deps),
   },
 ];
 

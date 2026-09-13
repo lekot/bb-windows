@@ -66,6 +66,8 @@ function createRuntimeConfig(): ServerRuntimeConfig {
     customModels: [],
     dataDir: "/tmp/bb-test",
     marketplaceUrl: "https://marketplace.invalid/marketplace.json",
+    localWhisperLanguage: "ru",
+    localWhisperUrl: "http://127.0.0.1:9003/asr",
     featureFlags: defaultFeatureFlags,
     hostDaemonPort: 38887,
     inheritedSkillsRootPaths: [],
@@ -76,6 +78,9 @@ function createRuntimeConfig(): ServerRuntimeConfig {
     serverPort: 38886,
     sharedSkillRoots: { user: [], project: [] },
     transcriptionModel: "openai/gpt-4o-transcribe",
+    voiceCorrectionApiKey: "",
+    voiceCorrectionModel: "glm-5.3-flash",
+    voiceCorrectionUrl: "",
   };
 }
 

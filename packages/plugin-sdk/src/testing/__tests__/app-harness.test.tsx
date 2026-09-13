@@ -868,6 +868,22 @@ describe("loadPluginApp", () => {
     ).rejects.toThrow(
       '"experimental_sidebarAccessory" must be a React component',
     );
+    await expect(
+      loadPluginApp(
+        definePluginApp((builder) => {
+          builder.slots.navPanel({
+            id: "panel",
+            title: "Panel",
+            icon: "FileText",
+            path: "panel",
+            component: Panel,
+            experimental_sidebarPlacement: "middle" as never,
+          });
+        }),
+      ),
+    ).rejects.toThrow(
+      '"experimental_sidebarPlacement" must be "navigation" or "footer"',
+    );
     await expect(loadPluginApp({ default: { nope: true } })).rejects.toThrow(
       "not definePluginApp(...)",
     );
@@ -886,6 +902,7 @@ describe("loadPluginApp", () => {
           path: "tasks",
           component: Panel,
           experimental_sidebarAccessory: SidebarAccessory,
+          experimental_sidebarPlacement: "footer",
         });
       }),
     );
@@ -893,6 +910,7 @@ describe("loadPluginApp", () => {
     expect(captured.navPanels[0]?.experimental_sidebarAccessory).toBe(
       SidebarAccessory,
     );
+    expect(captured.navPanels[0]?.experimental_sidebarPlacement).toBe("footer");
   });
 
   it("validates and captures nav panel fixed tabs", async () => {

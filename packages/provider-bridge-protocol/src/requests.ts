@@ -52,6 +52,21 @@ export const threadResumeParamsSchema = z
   .object({
     ...sessionConstructionFields,
     providerThreadId: z.string().min(1),
+    /**
+     * The resume targets the provider's own persisted original session (an
+     * external native ID), not a bb-created session: bridges must not apply
+     * bb execution defaults (model, permissions, instructions) on top of it.
+     */
+    resumeOriginal: z.literal(true).optional(),
+    nativeOverrides: z
+      .object({
+        model: z.boolean(),
+        permissions: z.boolean(),
+        reasoningLevel: z.boolean(),
+        serviceTier: z.boolean(),
+      })
+      .strict()
+      .optional(),
   })
   .passthrough();
 

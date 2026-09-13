@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildAgentModelCatalog,
@@ -450,8 +451,8 @@ describe("buildAcpSessionParams skill instructions", () => {
         SKILLS_PREAMBLE,
         "",
         "Available bb skills:",
-        "- release-notes: Use release-notes when /system_instructions tests run. (SKILL.md: /tmp/bb/runtime/global-skills/abc123/skills/release-notes/SKILL.md)",
-        "- copywriting: Use when writing customer copy. (SKILL.md: /tmp/bb/runtime/global-skills/abc123/skills/copywriting/SKILL.md)",
+        `- release-notes: Use release-notes when /system_instructions tests run. (SKILL.md: ${path.normalize("/tmp/bb/runtime/global-skills/abc123/skills/release-notes/SKILL.md")})`,
+        `- copywriting: Use when writing customer copy. (SKILL.md: ${path.normalize("/tmp/bb/runtime/global-skills/abc123/skills/copywriting/SKILL.md")})`,
       ].join("\n"),
     });
   });
@@ -478,7 +479,7 @@ describe("buildAcpSessionParams skill instructions", () => {
         SKILLS_PREAMBLE,
         "",
         "Available bb skills:",
-        "- debugging: Use when debugging runtime state. (SKILL.md: /tmp/bb/runtime/global-skills/def456/skills/debugging/SKILL.md)",
+        `- debugging: Use when debugging runtime state. (SKILL.md: ${path.normalize("/tmp/bb/runtime/global-skills/def456/skills/debugging/SKILL.md")})`,
       ].join("\n"),
     });
   });

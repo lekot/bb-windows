@@ -27,6 +27,9 @@ import {
   COMPACT_THREAD_TIMELINE_SEGMENT_LIMIT,
   didThreadDetailBootstrapRefreshAfterMount,
   isPendingInteractionStateUnknown,
+  shouldPollProvisioningThread,
+  shouldPollProvisioningTimeline,
+  shouldPollThreadTimeline,
   useArchivedThreads,
   useChildThreads,
   useThread,
@@ -158,6 +161,124 @@ beforeEach(() => {
     url: "/api/v1/threads/thread-1/host-files/content?path=%2Ftmp%2Flog.txt",
     mimeType: "text/plain",
     content: "preview",
+  });
+});
+
+describe("provisioning fallback polling", () => {
+  it("polls thread detail while runtime work is unsettled", () => {
+    expect(
+      shouldPollProvisioningThread(
+        makeThreadResponse({ runtime: { displayStatus: "provisioning" } }),
+      ),
+    ).toBe(true);
+    expect(
+      shouldPollProvisioningThread(
+        makeThreadResponse({ runtime: { displayStatus: "starting" } }),
+      ),
+    ).toBe(true);
+    expect(
+      shouldPollProvisioningThread(
+        makeThreadResponse({ runtime: { displayStatus: "active" } }),
+      ),
+    ).toBe(true);
+    expect(
+      shouldPollProvisioningThread(
+        makeThreadResponse({ runtime: { displayStatus: "idle" } }),
+      ),
+    ).toBe(false);
+  });
+
+  it("polls a timeline only while its provisioning row is pending", () => {
+    const pending = makeThreadTimelineResponse({
+      rows: [
+        {
+          id: "provisioning",
+          threadId: "thread-1",
+          turnId: null,
+          sourceSeqStart: 1,
+          sourceSeqEnd: 1,
+          startedAt: 1,
+          createdAt: 1,
+          kind: "system",
+          systemKind: "operation",
+          operationKind: "thread-provisioning",
+          title: "Preparing workspace",
+          detail: null,
+          status: "pending",
+          completedAt: null,
+        },
+      ],
+    });
+    const completed = {
+      ...pending,
+      rows: pending.rows.map((row) =>
+        row.kind === "system" ? { ...row, status: "completed" as const } : row,
+      ),
+    };
+
+    expect(shouldPollProvisioningTimeline(pending)).toBe(true);
+    expect(shouldPollProvisioningTimeline(completed)).toBe(false);
+  });
+
+  it("keeps polling an idle timeline that missed the assistant response", () => {
+    const userOnly = makeThreadTimelineResponse({
+      rows: [
+        {
+          id: "user",
+          threadId: "thread-1",
+          turnId: null,
+          sourceSeqStart: 1,
+          sourceSeqEnd: 1,
+          startedAt: 1,
+          createdAt: 1,
+          kind: "conversation",
+          role: "user",
+          text: "Ping",
+          mentions: [],
+          attachments: null,
+          initiator: "user",
+          senderThreadId: null,
+          systemMessageKind: "unlabeled",
+          systemMessageSubject: null,
+          turnRequest: {
+            isGrouped: false,
+            kind: "message",
+            status: "accepted",
+          },
+        },
+      ],
+    });
+    const idle = makeThreadResponse({
+      runtime: { displayStatus: "idle" },
+    });
+
+    expect(shouldPollThreadTimeline(userOnly, undefined)).toBe(true);
+    expect(shouldPollThreadTimeline(userOnly, idle)).toBe(true);
+    expect(
+      shouldPollThreadTimeline(
+        {
+          ...userOnly,
+          rows: [
+            ...userOnly.rows,
+            {
+              id: "assistant",
+              threadId: "thread-1",
+              turnId: "turn-1",
+              sourceSeqStart: 2,
+              sourceSeqEnd: 2,
+              startedAt: 2,
+              createdAt: 2,
+              kind: "conversation",
+              role: "assistant",
+              text: "Pong",
+              attachments: null,
+              turnRequest: null,
+            },
+          ],
+        },
+        idle,
+      ),
+    ).toBe(false);
   });
 });
 

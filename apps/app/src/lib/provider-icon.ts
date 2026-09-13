@@ -9,6 +9,13 @@ interface ProviderIconInfo {
   ariaLabel: string;
 }
 
+const ZCodeAppIcon: ComponentType<{ className?: string }> = ({ className }) =>
+  createElement("img", {
+    src: "/zcode-app-icon.png",
+    alt: "",
+    "aria-hidden": "true",
+    className: `${className ?? ""} scale-125 -translate-y-px`.trim(),
+  });
 interface ProviderIconSource {
   logoUrl: string | null;
   icon?: { glyph: string };
@@ -23,6 +30,9 @@ export function getProviderIconInfo(
   providerId: string,
   source: ProviderIconSource | null = null,
 ): ProviderIconInfo {
+  if (providerId === "acp-zcode") {
+    return { icon: ZCodeAppIcon, ariaLabel: "ZCode" };
+  }
   const cacheKey = JSON.stringify([
     providerKind,
     providerId,

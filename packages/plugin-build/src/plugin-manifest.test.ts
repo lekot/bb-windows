@@ -2,7 +2,20 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { validatePluginBuildManifest } from "./plugin-manifest.js";
+import {
+  resolveManifestPath,
+  validatePluginBuildManifest,
+} from "./plugin-manifest.js";
+
+it("keeps native paths within their plugin directory", () => {
+  const root = join(tmpdir(), "bb-native-path");
+  expect(resolveManifestPath(root, "./src/server.ts", "bb.server")).toBe(
+    join(root, "src", "server.ts"),
+  );
+  expect(() =>
+    resolveManifestPath(root, "../bb-native-path-other/server.ts", "bb.server"),
+  ).toThrow("escapes");
+});
 
 const SVG =
   '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h4v4z"/></svg>';

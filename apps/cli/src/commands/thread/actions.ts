@@ -33,6 +33,7 @@ import {
 import { SEND_AT_HELP, parseSendAt } from "./send-time.js";
 
 interface ThreadUpdateCommandOptions {
+  adoptNativeSession?: string;
   self?: boolean;
   json?: boolean;
   title?: string;
@@ -126,6 +127,7 @@ type PostThreadMessageResult = ThreadSendResult & {
 };
 
 interface ThreadUpdateBody {
+  adoptNativeSessionId?: string;
   title?: string;
   sectionId?: string | null;
   parentThreadId?: string | null;
@@ -141,6 +143,7 @@ export function registerActionsCommands(
   parent
     .command("update [id]")
     .description("Update a thread")
+    .option("--adopt-native-session <id>", "Preserve the current native session settings on an idle legacy thread")
     .option("--self", "Target the current thread (from BB_THREAD_ID)")
     .option("--json", "Print machine-readable JSON output")
     .option("--title <title>", "Set the thread title")
@@ -169,6 +172,9 @@ export function registerActionsCommands(
             throw new Error("Cannot combine --section with --clear-section.");
           }
           const reasoningLevel = parseReasoningLevel(opts.reasoningLevel);
+          if (opts.adoptNativeSession && (opts.model || opts.reasoningLevel)) {
+            throw new Error("Cannot combine --adopt-native-session with --model or --reasoning-level.");
+          }
           const visibility =
             opts.visibility === undefined
               ? undefined
@@ -181,10 +187,11 @@ export function registerActionsCommands(
             !opts.title &&
             !opts.model &&
             !reasoningLevel &&
-            !visibility
+            !visibility &&
+            !opts.adoptNativeSession
           ) {
             throw new Error(
-              "No changes requested. Provide --title, --parent-thread, --clear-parent-thread, --section, --clear-section, --model, --reasoning-level, or --visibility.",
+              "No changes requested. Provide --title, --parent-thread, --clear-parent-thread, --section, --clear-section, --model, --reasoning-level, --visibility, or --adopt-native-session.",
             );
           }
 
@@ -194,6 +201,9 @@ export function registerActionsCommands(
             value: opts.parentThread,
           });
           const body: ThreadUpdateBody = {};
+          if (opts.adoptNativeSession) {
+            body.adoptNativeSessionId = opts.adoptNativeSession;
+          }
           if (opts.title) {
             body.title = opts.title;
           }

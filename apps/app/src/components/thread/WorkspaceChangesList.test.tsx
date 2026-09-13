@@ -36,7 +36,9 @@ describe("WorkspaceChangesList", () => {
       WORKSPACE_CHANGES_LIST_MAX_ROWS + 1,
     );
     expect(
-      screen.getByText(`${(1234).toLocaleString()} more files not shown`),
+      screen.getByText(
+        `${(1234).toLocaleString("en-US")} more files not shown`,
+      ),
     ).toBeTruthy();
     expect(screen.queryByTitle(files[files.length - 1]!.path)).toBeNull();
   });

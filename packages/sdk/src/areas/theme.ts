@@ -67,6 +67,8 @@ export function createThemeArea(args: CreateSdkAreaArgs): ThemeArea {
             json: {
               themeId: input,
               faviconColor: appearance.faviconColor,
+              typographyProfile: appearance.typographyProfile,
+              fontScalePercent: appearance.fontScalePercent,
             },
           }),
         );

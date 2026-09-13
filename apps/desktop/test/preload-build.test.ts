@@ -138,6 +138,7 @@ async function startDesktopSmokeServer(
           generalSettings: {},
           hostDaemonPort: 38887,
           primaryHostPlatform: null,
+          voiceCorrectionEnabled: false,
           voiceTranscriptionEnabled: false,
         });
         return;

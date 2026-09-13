@@ -131,7 +131,10 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
       "Thread creation may omit root-thread presentation and execution fields so the server can resolve project/provider defaults.",
     fields: [
       "createThreadRequestSchema.sectionId",
+      "createThreadRequestSchema.claudeResumeSessionId",
+      "createThreadRequestSchema.claudeSourceSessionId",
       "createThreadRequestSchema.model",
+      "createThreadRequestSchema.nativeResumeSessionId",
       "createThreadRequestSchema.parentThreadId",
       "createThreadRequestSchema.providerId",
       "createThreadRequestSchema.permissionMode",
@@ -207,6 +210,7 @@ const OPTIONAL_SERVER_FIELD_GROUPS: readonly OptionalServerFieldGroup[] = [
     reason:
       "Thread PATCH requests omit fields that should be left unchanged; null explicitly clears nullable values.",
     fields: [
+      "updateThreadRequestSchema.adoptNativeSessionId",
       "updateThreadRequestSchema.model",
       "updateThreadRequestSchema.sectionId",
       "updateThreadRequestSchema.parentThreadId",
@@ -1170,12 +1174,15 @@ describe("server-contract canonical schemas", () => {
       }),
     ).toThrow("Project path must be an absolute path.");
 
-    expect(() =>
+    expect(
       contract.updateProjectSourceRequestSchema.parse({
         type: "local_path",
         path: " C:\\Users\\michael\\bb\\ ",
       }),
-    ).toThrow("Native Windows paths are not supported");
+    ).toEqual({
+      type: "local_path",
+      path: "C:\\Users\\michael\\bb",
+    });
 
     expect(() =>
       contract.updateProjectSourceRequestSchema.parse({

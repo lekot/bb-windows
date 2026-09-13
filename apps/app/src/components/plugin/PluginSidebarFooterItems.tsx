@@ -7,7 +7,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { ExperimentalSidebarFooterCommandKind } from "@get-bb/plugin-sdk/internal/plugin-app-collector";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { Icon } from "@bb/shared-ui/icon";
@@ -16,11 +16,13 @@ import { PluginIcon, pluginIconName } from "@/components/plugin/PluginIcon";
 import { PluginSlotMount } from "@/components/plugin/PluginSlotMount";
 import {
   usePluginSlots,
+  type PluginNavPanelSlot,
   type PluginSidebarFooterItemSlot,
 } from "@/lib/plugin-slots";
 import {
-  getSettingsRoutePath,
   getPluginConfigurationRoutePath,
+  getPluginPanelRoutePath,
+  getSettingsRoutePath,
 } from "@/lib/route-paths";
 
 import {
@@ -43,6 +45,7 @@ import {
   type BuiltinFooterId,
 } from "@/components/sidebar/sidebarFooterPreferences";
 import { SIDEBAR_FOOTER_ACTION_CLASS } from "@/components/sidebar/sidebarRowClasses";
+import { TypographyQuickControl } from "@/components/sidebar/TypographyQuickControl";
 
 function footerItemKey(item: PluginSidebarFooterItemSlot): string {
   return `${item.pluginId}/${item.id}/${item.generation}`;
@@ -276,6 +279,30 @@ export function PluginSidebarFooterItems({
             item.kind === "plugin" &&
             footerItemKey(item.slot) === activeDisclosureKey;
           const label = builtin?.ariaLabel ?? item.label;
+          if (item.kind === "builtin" && item.id === "typography") {
+            return (
+              <ContextMenu key={item.key}>
+                <ContextMenuTrigger asChild>
+                  <TypographyQuickControl itemKey={item.key} />
+                </ContextMenuTrigger>
+                <ContextMenuContent
+                  onPointerUpCapture={(event) => {
+                    if (event.button !== 0) event.preventDefault();
+                  }}
+                >
+                  <ContextMenuItem
+                    onSelect={() => preferences.setVisible(item.key, false)}
+                  >
+                    <Icon name="EyeOff" />
+                    Hide
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={customize}>
+                    Customize footer
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
+            );
+          }
           return (
             <ContextMenu key={item.key}>
               <ContextMenuTrigger asChild>
@@ -390,6 +417,69 @@ export function PluginSidebarFooterItems({
   );
 }
 
+export function PluginSidebarFooterNavPanels({
+  onNavigate,
+}: {
+  onNavigate?: () => void;
+}) {
+  const { navPanels } = usePluginSlots();
+  const footerPanels = navPanels.filter(
+    (panel) => panel.experimental_sidebarPlacement === "footer",
+  );
+  if (footerPanels.length === 0) return null;
+  return (
+    <>
+      {footerPanels.map((panel) => (
+        <SidebarFooterNavPanelButton
+          key={`${panel.pluginId}/${panel.id}/${panel.generation}`}
+          panel={panel}
+          onNavigate={onNavigate}
+        />
+      ))}
+    </>
+  );
+}
+
+function SidebarFooterNavPanelButton({
+  panel,
+  onNavigate,
+}: {
+  panel: PluginNavPanelSlot;
+  onNavigate?: () => void;
+}) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const path = getPluginPanelRoutePath({
+    pluginId: panel.pluginId,
+    path: panel.path,
+  });
+  const isActive =
+    location.pathname === path || location.pathname.startsWith(`${path}/`);
+
+  return (
+    <SidebarMenuItem className="min-w-0">
+      <SidebarMenuButton
+        type="button"
+        aria-label={panel.title}
+        tooltip={{ children: panel.title, hidden: false, side: "top" }}
+        className={cn(
+          SIDEBAR_FOOTER_ACTION_CLASS,
+          isActive &&
+            "bg-sidebar-accent text-sidebar-accent-foreground [&>svg]:opacity-100",
+        )}
+        data-testid={`plugin-sidebar-footer-panel-${panel.pluginId}-${panel.id}`}
+        onClick={() => {
+          onNavigate?.();
+          void navigate(path);
+        }}
+      >
+        <PluginIcon pluginId={panel.pluginId} icon={panel.icon} />
+        <span className="sr-only">{panel.title}</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
 function FooterCommandObserver({
   item,
   onDisclosureCommand,
@@ -416,6 +506,13 @@ function FooterCommandObserver({
 }
 
 export function FooterItemIcon({ item }: { item: FooterItem }) {
+  if (item.kind === "builtin" && item.id === "typography") {
+    return (
+      <span aria-hidden="true" className="text-xs font-semibold leading-none">
+        Aa
+      </span>
+    );
+  }
   return item.kind === "plugin" &&
     item.slot.source === "sidebarFooterAction" ? (
     <PluginIcon pluginId={item.slot.pluginId} icon={item.icon} />

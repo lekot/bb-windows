@@ -43,6 +43,7 @@ import {
 import {
   clearThreadProvisionSchedule,
   getThreadProvisionContext,
+  isThreadStartupDispatched,
   saveThreadProvisionContext,
   readThreadProvisionContext,
 } from "./thread-startup-store.js";
@@ -381,6 +382,10 @@ async function advanceThreadProvisioningOnce(
   }
   let context = loadActiveThreadProvisionContext(deps, thread.id);
   if (!context) {
+    if (isThreadStartupDispatched(deps.db, thread.id)) {
+      clearThreadProvisionSchedule(thread.id);
+      return;
+    }
     failThreadProvisioning(deps, {
       thread,
       environmentId: thread.environmentId,

@@ -14,6 +14,7 @@ import {
 } from "react";
 import { useAtomValue } from "jotai";
 import type { DiffFileEntry } from "@bb/server-contract";
+import type { GitDiffFilePreviewHandler } from "@/components/git-diff/git-diff-file-preview";
 import { Icon } from "@bb/shared-ui/icon";
 import { EmptyStatePanel } from "@bb/shared-ui/empty-state";
 import { Panel, PanelResizeHandle } from "react-resizable-panels";
@@ -197,7 +198,7 @@ export interface ThreadSecondaryPanelProps {
   pendingGitDiffScrollPath?: string | null;
   workspaceRootPath?: string | null;
   onOpenFileInEditor?: (path: string) => void;
-  onOpenFilePreview?: (path: string) => void;
+  onOpenFilePreview?: GitDiffFilePreviewHandler;
   onSelectionAddToChat?: (text: string) => void;
   isConversationCollapsed: boolean;
   onToggleConversationCollapse: () => void;

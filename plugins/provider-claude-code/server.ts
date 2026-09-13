@@ -61,6 +61,7 @@ export default function plugin(bb: BbPluginApi) {
       supportsThreadRename: false,
       permissionModes: ["accept-edits", "auto", "full"],
       reasoningLevels: ["low", "medium", "high", "xhigh", "ultracode", "max"],
+      experimental_nativeHistoryReader: "claude-transcript",
     },
     reasoningLevels: [
       { id: "low", label: "Low" },

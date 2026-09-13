@@ -31,7 +31,10 @@ import {
   PluginSlotOwnershipContext,
   usePluginId,
 } from "@/components/plugin/plugin-context";
-import { usePluginThreadPanelOpenHandler } from "@/components/plugin/plugin-thread-panel-navigation";
+import {
+  getActiveThreadPanelOpener,
+  usePluginThreadPanelOpenHandler,
+} from "@/components/plugin/plugin-thread-panel-navigation";
 import {
   PluginComposerViewContext,
   usePluginComposerHost,
@@ -341,7 +344,11 @@ export function useBbNavigate(): BbNavigate {
     [location.pathname, navigate, pluginId],
   );
   const openThreadPanel = useCallback<BbNavigate["openThreadPanel"]>(
-    (options) => openThreadPanelHandler?.({ ...options, pluginId }) ?? false,
+    (options) =>
+      (openThreadPanelHandler ?? getActiveThreadPanelOpener())?.({
+        ...options,
+        pluginId,
+      }) ?? false,
     [openThreadPanelHandler, pluginId],
   );
   const openUrl = useCallback<BbNavigate["openUrl"]>(

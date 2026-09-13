@@ -1,4 +1,5 @@
 import { PERSONAL_PROJECT_ID } from "@bb/domain";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { registerHostRpcResponder } from "../helpers/host-rpc.js";
 import {
@@ -44,10 +45,14 @@ describe("Personal project file access", () => {
       await withTestHarness(async (harness) => {
         const { host, session } = seedHostSession(harness.deps);
         seedPrimaryHost(harness.deps, host.id);
+        const workspacePath =
+          process.platform === "win32"
+            ? "C:\\personal\\workspace"
+            : "/personal/workspace";
         const environment = seedEnvironment(harness.deps, {
           projectId: PERSONAL_PROJECT_ID,
           hostId: host.id,
-          path: "/personal/workspace",
+          path: workspacePath,
         });
         const responder = registerHostRpcResponder(harness, {
           hostId: host.id,
@@ -82,7 +87,7 @@ describe("Personal project file access", () => {
                 };
               case "host.read_file":
                 expect(request.command.path).toBe(
-                  "/personal/workspace/hello.txt",
+                  join(workspacePath, "hello.txt"),
                 );
                 expect(request.command.rootPath).toBe(environment.path);
                 return {

@@ -65,6 +65,9 @@ interface ThreadSpawnCommandOptions {
   section?: string;
   originKind?: string;
   sourceThread?: string;
+  claudeSourceSession?: string;
+  claudeResumeSession?: string;
+  resumeNativeSession?: string;
   sourceSeqEnd?: string;
   visibility?: string;
   sendAt?: string;
@@ -377,6 +380,9 @@ export function registerSpawnCommand(
     .option("--send-at <when>", SEND_AT_HELP)
     .option("--origin-kind <kind>", "Thread origin: fork")
     .option("--source-thread <id>", "Source thread for a fork")
+    .option("--claude-source-session <uuid>", "Copy an existing host Claude session into a new bb thread (experimental)")
+    .option("--claude-resume-session <uuid>", "Continue the original host Claude session, preserving its ID (experimental; close other clients first)")
+    .option("--resume-native-session <id>", "Continue the provider's original native session (Codex UUID or ZCode sess_* ID), preserving its ID and settings (experimental; close other clients first)")
     .option(
       "--source-seq-end <seq>",
       "Fork after the source turn containing this event sequence",
@@ -559,6 +565,9 @@ export function registerSpawnCommand(
             ...(parentThreadId ? { parentThreadId } : {}),
             ...(opts.section ? { sectionId: opts.section } : {}),
             ...(opts.sourceThread ? { sourceThreadId: opts.sourceThread } : {}),
+            ...(opts.claudeSourceSession ? { claudeSourceSessionId: opts.claudeSourceSession } : {}),
+            ...(opts.claudeResumeSession ? { claudeResumeSessionId: opts.claudeResumeSession } : {}),
+            ...(opts.resumeNativeSession ? { nativeResumeSessionId: opts.resumeNativeSession } : {}),
             ...(sourceSeqEnd !== undefined ? { sourceSeqEnd } : {}),
             ...(sendAt !== undefined ? { sendAt } : {}),
           });

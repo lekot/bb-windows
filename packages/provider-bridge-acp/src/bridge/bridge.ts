@@ -76,6 +76,7 @@ import {
 import {
   buildAcpModelListParams,
   buildAcpSessionParams,
+  buildAcpModelSelectionParam,
   type AcpAgentCommandParam,
   type AcpModelListParams,
   type AcpSessionParams,
@@ -102,6 +103,7 @@ import {
   acpUsageUpdateSchema,
   type AcpConfigStateResult,
   type AcpSessionModels,
+  type AcpSessionModes,
   type AcpUsageUpdate,
   acpStopReasonSchema,
   acpWriteTextFileParamsSchema,
@@ -141,6 +143,10 @@ import {
   runAcpDynamicToolMcpServer,
   type AcpMcpServerConfig,
 } from "./tool-proxy-mcp.js";
+import { loadProjectMcpServers } from "./project-mcp.js";
+import { runAcpRemoteMcpProxy } from "./remote-mcp-proxy.js";
+
+import { applyLiveConfig } from "./live-config.js";
 
 interface AcpSessionPolicy {
   permissionMode: "accept-edits" | "full";
@@ -159,11 +165,18 @@ interface AcpPendingTurnInput {
 }
 
 interface AcpThreadSession {
+  configOptions: readonly AcpConfigOption[] | undefined;
   bbThreadId: string;
   construction: AcpSessionParams;
   providerThreadId: string;
   cwd: string;
   dialect: AcpDialect;
+  nativeModes: AcpSessionModes | undefined;
+  nativeMode: string | null;
+  resumeOriginal: {
+    baselineModel: string | undefined;
+    baselineReasoningLevel: string | undefined;
+  } | null;
   translator: AcpDeltaTranslator;
   connection: AcpAgentConnection;
   supportsImageInput: boolean;
@@ -431,9 +444,20 @@ async function ensureDynamicToolBridge(): Promise<AcpDynamicToolBridge> {
 async function buildSessionMcpServers(
   params: AcpSessionParams,
 ): Promise<AcpMcpServerConfig[]> {
+  const runtimeEnv = resolveBridgeProcessEnvForMcpServer();
+  const projectServers = await loadProjectMcpServers({
+    cwd: params.cwd,
+    proxyArgs: [
+      ...process.execArgv,
+      fileURLToPath(import.meta.url),
+      "--mcp-http-proxy",
+    ],
+    proxyCommand: process.execPath,
+    runtimeEnv,
+  });
   const dynamicTools = params.dynamicTools ?? [];
   if (dynamicTools.length === 0) {
-    return [];
+    return projectServers;
   }
   const bridge = await ensureDynamicToolBridge();
   const config = buildAcpMcpServerConfig({
@@ -442,14 +466,14 @@ async function buildSessionMcpServers(
     dynamicTools,
     host: bridge.host,
     port: bridge.port,
-    runtimeEnv: resolveBridgeProcessEnvForMcpServer(),
+    runtimeEnv,
     threadId: params.threadId,
     token: bridge.token,
   });
   process.stderr.write(
     `acp bridge: built "${config.name}" session MCP config for thread "${params.threadId}" (${dynamicTools.length} tools)\n`,
   );
-  return [config];
+  return [config, ...projectServers];
 }
 
 const ACP_DEFAULT_MODEL: AvailableModel = {
@@ -1011,6 +1035,16 @@ function withAcpAuthRequiredRecovery(error: unknown): unknown {
   return error;
 }
 
+const ACP_RATE_LIMITED_ERROR_MESSAGE_PREFIX = "ZCODE_RATE_LIMITED";
+
+function isAcpRateLimitedResponse(error: unknown): boolean {
+  return (
+    error instanceof AcpAgentResponseError &&
+    error.code === ACP_AUTH_REQUIRED_ERROR_CODE &&
+    error.message.startsWith(ACP_RATE_LIMITED_ERROR_MESSAGE_PREFIX)
+  );
+}
+
 async function resolveAgentLaunchArgs(
   params: AcpSessionParams,
 ): Promise<{ args: string[]; warning: string | undefined }> {
@@ -1133,6 +1167,35 @@ async function selectAcpNativeModel(args: {
     configOptions,
     modelSelection: selection,
   });
+}
+
+function nativeModeForPermission(
+  permissionMode: AcpSessionPolicy["permissionMode"],
+  modes: AcpSessionModes | undefined,
+): string | null {
+  if (modes === undefined) return null;
+  const has = (id: string) =>
+    modes.availableModes.some((mode) => mode.id === id);
+  if (permissionMode === "full") {
+    return has("yolo") ? "yolo" : null;
+  }
+  return has("build") ? "build" : null;
+}
+
+async function selectAcpNativePermissionMode(args: {
+  connection: AcpAgentConnection;
+  modes: AcpSessionModes | undefined;
+  permissionMode: AcpSessionPolicy["permissionMode"];
+  sessionId: string;
+}): Promise<string | null> {
+  const modeId = nativeModeForPermission(args.permissionMode, args.modes);
+  if (modeId === null) return null;
+  await args.connection.request({
+    method: "session/set_mode",
+    params: { sessionId: args.sessionId, modeId },
+    resultSchema: z.unknown(),
+  });
+  return modeId;
 }
 
 async function selectAcpNativeReasoning(args: {
@@ -1576,6 +1639,7 @@ type AcpSessionStartRequest =
       kind: "resume";
       params: AcpSessionParams;
       resumeProviderThreadId: string;
+      resumeOriginal?: true;
     }
   | {
       kind: "fork";
@@ -1663,11 +1727,24 @@ async function startAgentSession(
     },
   });
   session = {
+    configOptions: undefined,
     bbThreadId,
     construction: params,
     providerThreadId: "",
     cwd: params.cwd,
     dialect,
+    resumeOriginal:
+      request.kind === "resume" && request.resumeOriginal === true
+        ? {
+            baselineModel:
+              params.modelSelection === undefined
+                ? undefined
+                : "modelId" in params.modelSelection
+                  ? params.modelSelection.modelId
+                  : params.modelSelection.model,
+            baselineReasoningLevel: params.modelSelection?.reasoningLevel,
+          }
+        : null,
     translator,
     connection,
     supportsImageInput: false,
@@ -1685,6 +1762,8 @@ async function startAgentSession(
     loading: false,
     loadingSessionId: undefined,
     pendingLoadUsageUpdate: undefined,
+    nativeModes: undefined,
+    nativeMode: null,
     stopping: false,
     turnSettled: undefined,
     pendingPermissions: new Set(),
@@ -1734,6 +1813,7 @@ async function startAgentSession(
     let sessionId: string | undefined;
     let loadedConfigOptions: readonly AcpConfigOption[] | undefined;
     let loadedModels: AcpSessionModels | undefined;
+    let loadedModes: AcpSessionModes | undefined;
     if (request.kind === "fork") {
       const forkedSession = await connection.request({
         method: "session/fork",
@@ -1755,6 +1835,7 @@ async function startAgentSession(
       sessionId = forkedSession.sessionId;
       loadedConfigOptions = forkedSession.configOptions;
       loadedModels = forkedSession.models;
+      loadedModes = forkedSession.modes;
     } else if (request.kind === "resume" && supportsLoadSession) {
       session.loading = true;
       session.loadingSessionId = request.resumeProviderThreadId;
@@ -1771,13 +1852,24 @@ async function startAgentSession(
         });
         loadedConfigOptions = configState?.configOptions;
         loadedModels = configState?.models;
+        loadedModes = configState?.modes;
         sessionId = request.resumeProviderThreadId;
-      } catch {
+      } catch (error) {
         sessionId = undefined;
         session.loading = false;
         session.loadingSessionId = undefined;
         session.pendingLoadUsageUpdate = undefined;
+        if (request.resumeOriginal === true) {
+          throw new Error(
+            `ACP agent "${agentLabel}" could not restore the original native session "${request.resumeProviderThreadId}"; refusing to continue in a fresh session.`,
+            { cause: error },
+          );
+        }
       }
+    } else if (request.kind === "resume" && request.resumeOriginal === true) {
+      throw new Error(
+        `ACP agent "${agentLabel}" does not advertise session/load support, so the original native session "${request.resumeProviderThreadId}" cannot be restored.`,
+      );
     }
 
     if (sessionId === undefined) {
@@ -1790,6 +1882,14 @@ async function startAgentSession(
         resultSchema: acpSessionNewResultSchema,
       });
       sessionId = newSession.sessionId;
+      session.configOptions = newSession.configOptions;
+      session.nativeModes = newSession.modes;
+      session.nativeMode = await selectAcpNativePermissionMode({
+        connection,
+        sessionId,
+        modes: newSession.modes,
+        permissionMode: params.permissionMode,
+      });
       await selectAcpNativeModel({
         connection,
         sessionId,
@@ -1805,14 +1905,24 @@ async function startAgentSession(
         });
       }
     } else {
-      await selectAcpNativeModel({
+      session.configOptions = loadedConfigOptions;
+      session.nativeModes = loadedModes;
+      session.nativeMode = await selectAcpNativePermissionMode({
         connection,
         sessionId,
-        configOptions: loadedConfigOptions,
-        models: loadedModels,
-        modelSelection: params.modelSelection,
-        nativeReasoning: params.nativeReasoning,
+        modes: loadedModes,
+        permissionMode: params.permissionMode,
       });
+      if (request.kind !== "resume" || request.resumeOriginal !== true) {
+        await selectAcpNativeModel({
+          connection,
+          sessionId,
+          configOptions: loadedConfigOptions,
+          models: loadedModels,
+          modelSelection: params.modelSelection,
+          nativeReasoning: params.nativeReasoning,
+        });
+      }
       const loadUsageUpdate = session.pendingLoadUsageUpdate;
       session.loading = false;
       session.loadingSessionId = undefined;
@@ -1978,6 +2088,7 @@ function finishTurn(
   }
   session.activePromptKind = null;
   dropQueuedTurnInputs(session, "ACP turn ended before the steer was sent");
+  cancelPendingPermissions(session);
   session.promptRequestPending = false;
   session.cancelRequested = false;
   emitForSession(session, ACP_TURN_COMPLETED_METHOD, {
@@ -2024,6 +2135,7 @@ function runTurn(
         stopReason = result.stopReason;
       } catch (error) {
         session.promptRequestPending = false;
+        cancelPendingPermissions(session);
         dropTurnInput(pending, "ACP turn failed before the prompt was sent");
         dropQueuedTurnInputs(
           session,
@@ -2036,10 +2148,20 @@ function runTurn(
             error instanceof Error ? error.message : String(error),
           );
         }
+        if (isAcpRateLimitedResponse(error)) {
+          sendNotification(BRIDGE_NOTIFICATION_METHODS.providerRecovery, {
+            threadId: session.bbThreadId,
+            kind: "rateLimited",
+            message: error instanceof Error ? error.message : String(error),
+            retryable: false,
+          });
+        }
         session.activePromptKind = null;
         return;
       }
       session.promptRequestPending = false;
+
+      cancelPendingPermissions(session);
 
       if (!session.stopping) {
         const next = session.queuedInputs.shift();
@@ -2511,6 +2633,9 @@ async function handleRequest(
               kind: "resume",
               params: sessionParams,
               resumeProviderThreadId: request.params.providerThreadId,
+              ...(request.params.resumeOriginal === true
+                ? { resumeOriginal: true }
+                : {}),
             }
           : request.method === "thread/fork"
             ? {
@@ -2537,6 +2662,83 @@ async function handleRequest(
       if (session.activePromptKind !== null) {
         sendError(request.id, -32000, "A turn is already active");
         return;
+      }
+      if (params.options.permissionMode === "auto") {
+        sendError(
+          request.id,
+          -32602,
+          "ACP does not support permission mode auto",
+        );
+        return;
+      }
+      session.policy.permissionMode = params.options.permissionMode;
+      const targetNativeMode = nativeModeForPermission(
+        params.options.permissionMode,
+        session.nativeModes,
+      );
+      if (
+        targetNativeMode !== null &&
+        targetNativeMode !== session.nativeMode
+      ) {
+        await session.connection.request({
+          method: "session/set_mode",
+          params: {
+            sessionId: session.providerThreadId,
+            modeId: targetNativeMode,
+          },
+          resultSchema: z.unknown(),
+        });
+        session.nativeMode = targetNativeMode;
+      }
+      const launchSpec = decodeLaunchSpec(params.options.providerOptions);
+      if (launchSpec) {
+        const configSession = session;
+        const picker = decodeAcpModelPickerOptions(
+          params.options.providerOptions,
+        );
+        const { modelSelection } = buildAcpModelSelectionParam(
+          launchSpec,
+          params.options,
+          picker.parameterizedModelPicker,
+          decodeDialectId(params.options.providerOptions),
+        );
+        const resumeBaseline = configSession.resumeOriginal;
+        const applyConfig = async () => {
+          configSession.configOptions = await applyLiveConfig(
+            configSession.configOptions,
+            modelSelection,
+            async (configId, value) => {
+              const result = await configSession.connection.request({
+                method: "session/set_config_option",
+                params: {
+                  sessionId: configSession.providerThreadId,
+                  configId,
+                  value,
+                },
+                resultSchema: acpConfigStateResultSchema,
+              });
+              return result.configOptions ?? [];
+            },
+          );
+        };
+        if (resumeBaseline === null) {
+          await applyConfig();
+        } else {
+          const selectionModel =
+            modelSelection === undefined
+              ? undefined
+              : "modelId" in modelSelection
+                ? modelSelection.modelId
+                : modelSelection.model;
+          const matchesBaseline =
+            selectionModel === resumeBaseline.baselineModel &&
+            modelSelection?.reasoningLevel ===
+              resumeBaseline.baselineReasoningLevel;
+          if (!matchesBaseline) {
+            await applyConfig();
+            configSession.resumeOriginal = null;
+          }
+        }
       }
       if (Object.keys(params.options.envVars ?? {}).length > 0) {
         const envVars = {
@@ -2690,6 +2892,14 @@ async function stopAllSessions(): Promise<void> {
 
 if (process.argv.includes("--mcp-stdio")) {
   runAcpDynamicToolMcpServer();
+}
+if (process.argv.includes("--mcp-http-proxy")) {
+  void runAcpRemoteMcpProxy().catch((error) => {
+    process.stderr.write(
+      `acp project MCP proxy failed: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+    process.exitCode = 1;
+  });
 }
 
 export const experimental_providerBridge = experimental_defineProviderBridge({

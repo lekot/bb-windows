@@ -66,7 +66,15 @@ it("preserves the archived-session error text verbatim on a rejected resume", as
       retryable: true,
     },
   });
-  expect(readFileSync(processLogPath, "utf8")).toContain("exit:");
+  const processLog = readFileSync(processLogPath, "utf8");
+  const spawnedPid = Number(/^spawn:(\d+):/m.exec(processLog)?.[1]);
+  expect(Number.isSafeInteger(spawnedPid) && spawnedPid > 0).toBe(true);
+  expect(() => process.kill(spawnedPid, 0)).toThrowError(
+    expect.objectContaining({ code: "ESRCH" }),
+  );
+  if (process.platform !== "win32") {
+    expect(processLog).toContain("exit:");
+  }
 }, 30_000);
 
 it("attaches the sessionArchived hint to a fork whose source is archived", async () => {

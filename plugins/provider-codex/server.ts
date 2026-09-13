@@ -48,6 +48,7 @@ export default function plugin(bb: BbPluginApi) {
       supportsThreadRename: true,
       permissionModes: ["accept-edits", "auto", "full"],
       reasoningLevels: ["low", "medium", "high", "xhigh", "max", "ultra"],
+      experimental_nativeHistoryReader: "codex-rollout",
     },
     reasoningLevels: [
       { id: "low", label: "Low" },

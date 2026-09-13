@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
 import {
@@ -299,14 +300,14 @@ describe("public project local host routes", () => {
         harness,
         ({ command }) =>
           command.type === "host.read_file" &&
-          command.path === "/tmp/project-file-content/src/app.ts",
+          command.path === join("/tmp/project-file-content", "src", "app.ts"),
       );
       expect(fileCommand.command).toMatchObject({
-        path: "/tmp/project-file-content/src/app.ts",
+        path: join("/tmp/project-file-content", "src", "app.ts"),
         rootPath: "/tmp/project-file-content",
       });
       await reportQueuedCommandSuccess(harness, fileCommand, {
-        path: "/tmp/project-file-content/src/app.ts",
+        path: join("/tmp/project-file-content", "src", "app.ts"),
         content: "console.log('ok');",
         contentEncoding: "utf8",
         mimeType: "application/typescript",
@@ -335,10 +336,10 @@ describe("public project local host routes", () => {
         fileCommand.row.cursor,
         ({ command }) =>
           command.type === "host.read_file" &&
-          command.path === "/tmp/project-file-content/src/app.ts",
+          command.path === join("/tmp/project-file-content", "src", "app.ts"),
       );
       await reportQueuedCommandSuccess(harness, revalidateCommand, {
-        path: "/tmp/project-file-content/src/app.ts",
+        path: join("/tmp/project-file-content", "src", "app.ts"),
         content: "console.log('ok');",
         contentEncoding: "utf8",
         mimeType: "application/typescript",

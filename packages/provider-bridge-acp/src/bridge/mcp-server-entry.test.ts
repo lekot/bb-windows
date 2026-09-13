@@ -1,4 +1,5 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -241,9 +242,21 @@ async function runMcpInitialize(config: AdvertisedMcpServer): Promise<{
   return { exitCode, stderr, stdoutLines };
 }
 
-afterEach(() => {
-  for (const child of children.splice(0)) {
-    child.kill("SIGKILL");
+afterEach(async () => {
+  for (const child of children.splice(0).reverse()) {
+    if (child.exitCode !== null || child.signalCode !== null) continue;
+    const closed = once(child, "close");
+    if (process.platform === "win32" && child.pid !== undefined) {
+      await new Promise<void>((resolveKill, rejectKill) => {
+        execFile("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true }, (error) => {
+          if (error && child.exitCode === null && child.signalCode === null) rejectKill(error);
+          else resolveKill();
+        });
+      });
+    } else {
+      child.kill("SIGKILL");
+    }
+    await closed;
   }
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });

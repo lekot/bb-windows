@@ -233,6 +233,7 @@ function createTurnSubmitCommand(
       permissionEscalation: null,
     },
     resumeContext: {
+      nativeSession: null,
       bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
       workspaceContext: {
         workspacePath: WORKSPACE_PATH,
@@ -770,6 +771,7 @@ describe("dispatchCommand", () => {
         permissionEscalation: null,
       },
       resumeContext: {
+        nativeSession: null,
         bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
         workspaceContext: {
           workspacePath: WORKSPACE_PATH,
@@ -848,6 +850,7 @@ describe("dispatchCommand", () => {
         permissionEscalation: null,
       },
       resumeContext: {
+        nativeSession: null,
         bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
         workspaceContext: {
           workspacePath: "/tmp/bb-command-dispatch-new",
@@ -1223,6 +1226,7 @@ describe("dispatchCommand", () => {
         permissionEscalation: null,
       },
       resumeContext: {
+        nativeSession: null,
         bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
         workspaceContext: {
           workspacePath: "/tmp/bb-goal-new",
@@ -2351,6 +2355,7 @@ describe("dispatchCommand", () => {
         permissionEscalation: null,
       },
       resumeContext: {
+        nativeSession: null,
         bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
         workspaceContext: {
           workspacePath: WORKSPACE_PATH,

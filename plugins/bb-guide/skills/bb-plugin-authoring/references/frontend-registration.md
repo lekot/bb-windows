@@ -138,6 +138,8 @@ export default definePluginApp((app) => {
 });
 ```
 
+Set `experimental_sidebarPlacement` to `"footer"` when a nav panel belongs in the customizable sidebar footer.
+
 ### A control in the thread header
 
 `app.slots.experimental_threadHeaderAction` renders a component in the thread

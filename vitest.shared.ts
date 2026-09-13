@@ -369,7 +369,6 @@ export function defineWorkspaceTestConfig(
       },
       ssr: {
         resolve: {
-          conditions: ["source"],
           externalConditions: ["source"],
         },
       },

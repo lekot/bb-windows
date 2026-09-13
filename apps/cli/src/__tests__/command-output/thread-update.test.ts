@@ -16,6 +16,23 @@ describe("bb thread update command output", () => {
   const register: CommandRegistrar = (program) =>
     registerThreadCommands(program, () => "http://server");
 
+  it("adopts the specified native session without implicit execution changes", async () => {
+    const thread = fixtures.makeThread({ id: "thread-adopt", projectId: "project-adopt", providerId: "codex", status: "idle" });
+    const patch = vi.fn(async () => thread);
+    stubServerApi({ "v1.threads.:id.$patch": patch });
+    const sessionId = "01a07f45-4865-7be1-8c98-d56567822218";
+    await runCommand(["thread", "update", "thread-adopt", "--adopt-native-session", sessionId, "--json"], register);
+    expect(patch).toHaveBeenCalledWith({ param: { id: "thread-adopt" }, json: { adoptNativeSessionId: sessionId } });
+  });
+
+  it.each([["--model", "gpt-5.6-luna"], ["--reasoning-level", "high"]])("rejects adoption combined with %s before requesting the server", async (flag, value) => {
+    const patch = vi.fn();
+    stubServerApi({ "v1.threads.:id.$patch": patch });
+    await expect(runCommand(["thread", "update", "thread-adopt", "--adopt-native-session", "01a07f45-4865-7be1-8c98-d56567822218", flag, value], register)).rejects.toThrow("process.exit:1");
+    expect(collectLogLines(vi.mocked(console.error)).join("\n")).toContain("Cannot combine --adopt-native-session");
+    expect(patch).not.toHaveBeenCalled();
+  });
+
   it("bb thread update sets the parent thread id", async () => {
     const thread: domain.Thread = fixtures.makeThread({
       id: "thread-update-1",

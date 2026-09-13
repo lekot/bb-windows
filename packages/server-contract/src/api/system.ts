@@ -122,6 +122,23 @@ export type SystemVoiceTranscriptionResponse = z.infer<
   typeof systemVoiceTranscriptionResponseSchema
 >;
 
+export const systemVoiceCorrectionRequestSchema = z
+  .object({
+    text: z.string().trim().min(1).max(8_000),
+  })
+  .strict();
+export type SystemVoiceCorrectionRequest = z.infer<
+  typeof systemVoiceCorrectionRequestSchema
+>;
+
+export const systemVoiceCorrectionResponseSchema = z.object({
+  corrected: z.boolean(),
+  text: z.string(),
+});
+export type SystemVoiceCorrectionResponse = z.infer<
+  typeof systemVoiceCorrectionResponseSchema
+>;
+
 export const systemProviderStateSchema = providerHealthSchema.extend({
   providerId: z.string().min(1),
   displayName: z.string().min(1),
@@ -195,6 +212,7 @@ export const systemConfigResponseSchema = z.object({
   serverUrl: z.string().url(),
   primaryHostId: z.string().nullable(),
   primaryHostPlatform: hostPlatformSchema.nullable(),
+  voiceCorrectionEnabled: z.boolean(),
   voiceTranscriptionEnabled: z.boolean(),
   aiServices: systemAiServicesSchema,
   dataDir: z.string(),

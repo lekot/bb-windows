@@ -31,6 +31,14 @@ import { Button } from "@bb/shared-ui/button";
 import { FilePathLink } from "@/components/ui/file-path-link.js";
 import type { DiffPatchState } from "@/hooks/queries/use-environment-diff-patches";
 import { cn } from "@bb/shared-ui/lib/utils";
+import {
+  areEnvironmentFilePreviewSourcesEqual,
+  type EnvironmentFilePreviewSource,
+} from "@bb/client-core";
+import {
+  resolveGitDiffFilePreviewRequest,
+  type GitDiffFilePreviewHandler,
+} from "@/components/git-diff/git-diff-file-preview";
 
 function formatDiffEntryLabel(entry: DiffFileEntry): string {
   if (
@@ -45,11 +53,12 @@ function formatDiffEntryLabel(entry: DiffFileEntry): string {
 
 function buildDiffEntryHeaderModel(
   entry: DiffFileEntry,
+  isOpenable: boolean,
 ): GitDiffCardHeaderModel {
   return {
     label: formatDiffEntryLabel(entry),
     path: entry.path,
-    openablePath: entry.path,
+    openablePath: isOpenable ? entry.path : null,
     changeKind: entry.changeKind,
     insertions: entry.additions,
     deletions: entry.deletions,
@@ -126,7 +135,8 @@ export interface DiffFileCardProps {
   onLoadPatch: () => void;
   onRetry: () => void;
   onOpenFileInEditor?: (path: string) => void;
-  onOpenFilePreview?: (path: string) => void;
+  onOpenFilePreview?: GitDiffFilePreviewHandler;
+  deletedFilePreviewSource?: EnvironmentFilePreviewSource | null;
   onRequestFileContents?: RequestDiffFileContents;
   onSelectionAddToChat?: (text: string) => void;
 }
@@ -154,9 +164,29 @@ function areDiffFileCardPropsEqual(
     previous.onRetry === next.onRetry &&
     previous.onOpenFileInEditor === next.onOpenFileInEditor &&
     previous.onOpenFilePreview === next.onOpenFilePreview &&
+    areDeletedFilePreviewSourcesEqual(
+      previous.deletedFilePreviewSource,
+      next.deletedFilePreviewSource,
+    ) &&
     previous.onRequestFileContents === next.onRequestFileContents &&
     previous.onSelectionAddToChat === next.onSelectionAddToChat &&
     arePatchStatesEqual(previous.patchState, next.patchState)
+  );
+}
+
+function areDeletedFilePreviewSourcesEqual(
+  previous: EnvironmentFilePreviewSource | null | undefined,
+  next: EnvironmentFilePreviewSource | null | undefined,
+): boolean {
+  if (previous === next) {
+    return true;
+  }
+  return (
+    previous !== null &&
+    previous !== undefined &&
+    next !== null &&
+    next !== undefined &&
+    areEnvironmentFilePreviewSourcesEqual(previous, next)
   );
 }
 
@@ -256,10 +286,29 @@ export const DiffFileCard = memo(function DiffFileCard({
   onRetry,
   onOpenFileInEditor,
   onOpenFilePreview,
+  deletedFilePreviewSource = null,
   onRequestFileContents,
   onSelectionAddToChat,
 }: DiffFileCardProps) {
-  const headerModel = useMemo(() => buildDiffEntryHeaderModel(entry), [entry]);
+  const previewRequest = useMemo(
+    () =>
+      resolveGitDiffFilePreviewRequest({
+        entry,
+        deletedFileSource: deletedFilePreviewSource,
+      }),
+    [deletedFilePreviewSource, entry],
+  );
+  const headerModel = useMemo(
+    () => buildDiffEntryHeaderModel(entry, previewRequest !== null),
+    [entry, previewRequest],
+  );
+  const handleOpenFilePreview = useMemo(
+    () =>
+      onOpenFilePreview && previewRequest
+        ? () => onOpenFilePreview(previewRequest)
+        : undefined,
+    [onOpenFilePreview, previewRequest],
+  );
   const parsedFile = useMemo<ParsedGitDiffFile | null>(() => {
     if (patchState.status !== "loaded" || patchState.patch === undefined) {
       return null;
@@ -329,8 +378,10 @@ export const DiffFileCard = memo(function DiffFileCard({
           model={headerModel}
           previousPath={entry.previousPath}
           filePathRoot={filePathRoot}
-          onOpenFileInEditor={onOpenFileInEditor}
-          onOpenFilePreview={onOpenFilePreview}
+          onOpenFileInEditor={
+            entry.changeKind === "deleted" ? undefined : onOpenFileInEditor
+          }
+          onOpenFilePreview={handleOpenFilePreview}
           isCollapsed={isCollapsed}
           onToggleCollapsed={onToggleCollapsed}
           hasChanges
@@ -364,7 +415,7 @@ export const DiffFileCard = memo(function DiffFileCard({
           svgDisplayMode={svgDisplayMode}
           onLoadPatch={onLoadPatch}
           onRetry={onRetry}
-          onOpenFilePreview={onOpenFilePreview}
+          onOpenFilePreview={handleOpenFilePreview}
           onRequestFileContents={onRequestFileContents}
           onSelectionAddToChat={onSelectionAddToChat}
           binaryImagePreviewState={

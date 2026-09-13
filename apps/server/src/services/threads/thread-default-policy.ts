@@ -177,6 +177,35 @@ function resolveSupportedPermissionMode(
   return permissionModes[0] ?? DEFAULT_PERMISSION_MODE;
 }
 
+interface ResolveSupportedReasoningLevelArgs {
+  providerId: string;
+  preferredReasoningLevel: ReasoningLevel;
+}
+
+const REASONING_PREFERENCE_ORDER: readonly ReasoningLevel[] = [
+  "medium",
+  "high",
+  "max",
+  "xhigh",
+  "low",
+];
+
+function resolveSupportedReasoningLevel(
+  registry: ProviderRegistryService,
+  args: ResolveSupportedReasoningLevelArgs,
+): ReasoningLevel {
+  const supported = registry.getServerCapabilities(args.providerId)?.reasoningLevels ?? [];
+  if (supported.length === 0 || supported.includes(args.preferredReasoningLevel)) {
+    return args.preferredReasoningLevel;
+  }
+  for (const candidate of REASONING_PREFERENCE_ORDER) {
+    if (supported.includes(candidate)) {
+      return candidate;
+    }
+  }
+  return supported[0] ?? args.preferredReasoningLevel;
+}
+
 export function resolveCreateThreadExecutionDefaults(
   registry: ProviderRegistryService,
   args: ResolveCreateThreadExecutionDefaultsArgs,
@@ -209,7 +238,10 @@ export function buildProviderThreadExecutionDefaults(
   return {
     providerId: args.providerId,
     model: args.model,
-    reasoningLevel: DEFAULT_REASONING_LEVEL,
+    reasoningLevel: resolveSupportedReasoningLevel(registry, {
+      providerId: args.providerId,
+      preferredReasoningLevel: DEFAULT_REASONING_LEVEL,
+    }),
     permissionMode: resolveSupportedPermissionMode(registry, {
       providerId: args.providerId,
       preferredPermissionMode: DEFAULT_PERMISSION_MODE,

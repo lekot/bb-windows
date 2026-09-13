@@ -276,6 +276,12 @@ export function createBridgeProtocolAdapter(
               threadId: command.threadId,
               cwd: command.cwd,
               providerThreadId: command.providerThreadId,
+              ...(command.resumeOriginal === true
+                ? { resumeOriginal: true }
+                : {}),
+              ...(command.nativeOverrides === undefined
+                ? {}
+                : { nativeOverrides: command.nativeOverrides }),
               ...sessionConstructionParams(command),
             },
           };

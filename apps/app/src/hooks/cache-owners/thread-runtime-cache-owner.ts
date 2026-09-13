@@ -72,6 +72,13 @@ interface ThreadIdCacheArgs {
   threadId: string;
 }
 
+export function getCachedThreadResponse(
+  queryClient: QueryClient,
+  threadId: string,
+): ThreadResponse | undefined {
+  return queryClient.getQueryData<ThreadResponse>(threadQueryKey(threadId));
+}
+
 interface PrefetchThreadQueuedMessagesArgs extends ThreadIdCacheArgs {
   load: (signal: AbortSignal) => Promise<ThreadQueuedMessageListResponse>;
 }

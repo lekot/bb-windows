@@ -130,7 +130,7 @@ function CardStage({
         onLoadPatch={() => appToast.message("Load diff requested")}
         onRetry={() => appToast.message("Retry requested")}
         onOpenFileInEditor={toast("Open in editor")}
-        onOpenFilePreview={toast("Open file preview")}
+        onOpenFilePreview={({ path }) => { toast("Open file preview")(path); }}
         onRequestFileContents={onRequestFileContents}
       />
     </div>

@@ -120,7 +120,7 @@ export function resolveAcpFileChangeWriteScope(
 ): string | null {
   const normalized = paths.filter(isNonBlank).map((entry) => {
     const value = path.normalize(entry);
-    return value.length > 1 && value.endsWith(path.sep)
+    return value.length > path.parse(value).root.length && value.endsWith(path.sep)
       ? value.slice(0, -1)
       : value;
   });

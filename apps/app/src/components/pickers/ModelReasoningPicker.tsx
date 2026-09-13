@@ -111,6 +111,7 @@ const REASONING_CYCLE_COMMANDS = [
 
 const MODEL_SEARCH_MIN_OPTIONS = 5;
 const MODEL_PICKER_MENU_WIDTH_CLASS_NAME = "w-max min-w-64 max-w-80";
+const HIDDEN_PROVIDER_TAB_IDS = new Set(["acp-cursor"]);
 
 function splitModelLabelTag(label: string): ModelLabelParts {
   const match = label.match(/^(.*\S)\s*\(([^()]+)\)$/u);
@@ -267,6 +268,11 @@ export function ModelReasoningPicker({
   }
 
   const activeProviderId = previewProviderId ?? selectedProviderId;
+  const providerTabOptions = providerOptions.filter(
+    (provider) =>
+      provider.value === activeProviderId ||
+      !HIDDEN_PROVIDER_TAB_IDS.has(provider.value),
+  );
 
   const selectedProvider = providerOptions.find(
     (p) => p.value === selectedProviderId,
@@ -283,7 +289,7 @@ export function ModelReasoningPicker({
   const canSwitchProviders =
     hasMultipleProviders &&
     onSelectedProviderChange !== undefined &&
-    providerOptions.length > 1;
+    providerTabOptions.length > 1;
   const hasAlternateSelectionPath =
     modelOptions.length > 0 ||
     (selectedModelLoadErrorMatches && canSwitchProviders);
@@ -621,8 +627,8 @@ export function ModelReasoningPicker({
       if (canSwitchProviders && onSelectedProviderChange !== undefined) {
         const next =
           index === 0
-            ? nextCycleValue(providerOptions, selectedProviderId)
-            : previousCycleValue(providerOptions, selectedProviderId);
+            ? nextCycleValue(providerTabOptions, selectedProviderId)
+            : previousCycleValue(providerTabOptions, selectedProviderId);
         if (next !== null) {
           handleProviderSelect(next);
         }
@@ -913,7 +919,7 @@ export function ModelReasoningPicker({
               isCompactViewport ? "bg-background" : "bg-surface-recessed",
             )}
           >
-            {providerOptions.map((provider) => {
+            {providerTabOptions.map((provider) => {
               const TabIcon = provider.icon;
               const isActive = provider.value === activeProviderId;
               return (

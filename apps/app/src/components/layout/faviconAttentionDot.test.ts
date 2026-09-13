@@ -22,6 +22,7 @@ function makeSidebarThread(
 
 const BASE_ARGS = {
   currentThreadHasPendingInteraction: false,
+  isDocumentVisible: true,
   isThreadView: false,
   thread: null,
   sidebarThreads: [] as FaviconSidebarThread[],
@@ -50,26 +51,57 @@ describe("shouldShowFaviconAttentionDot", () => {
     ).toBe(true);
   });
 
-  it("uses only the current thread's unread state while viewing a thread", () => {
+  it("does not show unread attention for the currently viewed thread", () => {
     expect(
       shouldShowFaviconAttentionDot({
         ...BASE_ARGS,
         isThreadView: true,
+        currentThreadId: "thr_sidebar",
         thread: { lastReadAt: 10, latestAttentionAt: 20 },
-        sidebarThreads: [],
-      }),
-    ).toBe(true);
-    expect(
-      shouldShowFaviconAttentionDot({
-        ...BASE_ARGS,
-        isThreadView: true,
-        thread: { lastReadAt: 30, latestAttentionAt: 20 },
-        sidebarThreads: [makeSidebarThread({ lastReadAt: 5 })],
+        sidebarThreads: [makeSidebarThread()],
       }),
     ).toBe(false);
   });
 
-  it("ignores background attention while a focused thread owns the favicon", () => {
+  it("shows unread attention for the viewed thread while the browser tab is hidden", () => {
+    expect(
+      shouldShowFaviconAttentionDot({
+        ...BASE_ARGS,
+        isDocumentVisible: false,
+        isThreadView: true,
+        currentThreadId: "thr_sidebar",
+        thread: { lastReadAt: 10, latestAttentionAt: 20 },
+        sidebarThreads: [makeSidebarThread()],
+      }),
+    ).toBe(true);
+  });
+
+  it("uses the current thread directly while hidden when its sidebar row is unavailable", () => {
+    expect(
+      shouldShowFaviconAttentionDot({
+        ...BASE_ARGS,
+        isDocumentVisible: false,
+        isThreadView: true,
+        currentThreadId: "thr_current",
+        thread: { lastReadAt: 10, latestAttentionAt: 20 },
+        sidebarThreads: [],
+      }),
+    ).toBe(true);
+  });
+
+  it("shows unread attention for another thread", () => {
+    expect(
+      shouldShowFaviconAttentionDot({
+        ...BASE_ARGS,
+        isThreadView: true,
+        currentThreadId: "thr_current",
+        thread: { lastReadAt: 30, latestAttentionAt: 20 },
+        sidebarThreads: [makeSidebarThread({ lastReadAt: 5 })],
+      }),
+    ).toBe(true);
+  });
+
+  it("shows background pending attention while viewing another thread", () => {
     expect(
       shouldShowFaviconAttentionDot({
         ...BASE_ARGS,
@@ -83,7 +115,7 @@ describe("shouldShowFaviconAttentionDot", () => {
           }),
         ],
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("shows background pending attention when no thread is focused", () => {
@@ -179,5 +211,26 @@ describe("shouldShowFaviconAttentionDot", () => {
         ],
       }),
     ).toBe(false);
+  });
+
+  it("shows an unread result from a fork of the viewed thread", () => {
+    expect(
+      shouldShowFaviconAttentionDot({
+        ...BASE_ARGS,
+        isThreadView: true,
+        currentThreadId: "thr_parent",
+        thread: { lastReadAt: 30, latestAttentionAt: 20 },
+        sidebarThreads: [
+          makeSidebarThread({
+            id: "thr_fork",
+            originKind: "fork",
+            parentThreadId: "thr_parent",
+            hasPendingInteraction: false,
+            lastReadAt: 10,
+            latestAttentionAt: 20,
+          }),
+        ],
+      }),
+    ).toBe(true);
   });
 });

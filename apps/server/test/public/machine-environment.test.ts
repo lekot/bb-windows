@@ -64,10 +64,12 @@ describe("machine environment settings", () => {
           "GH_TOKEN",
         );
         await expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" });
-        expect(
-          (await stat(join(harness.config.dataDir, "machine-environment-key")))
-            .mode & 0o777,
-        ).toBe(0o600);
+        const keyMode = (
+          await stat(join(harness.config.dataDir, "machine-environment-key"))
+        ).mode;
+        if (process.platform !== "win32") {
+          expect(keyMode & 0o777).toBe(0o600);
+        }
         expect(
           JSON.stringify(harness.db.select().from(appSettingsValues).all()),
         ).not.toContain("test-region");

@@ -205,7 +205,7 @@ export function buildAcpModelListParams(
   };
 }
 
-function buildAcpModelSelectionParam(
+export function buildAcpModelSelectionParam(
   launchSpec: AcpLaunchSpec,
   options: AcpSessionExecutionOptions,
   parameterizedModelPicker: boolean,

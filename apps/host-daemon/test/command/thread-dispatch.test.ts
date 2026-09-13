@@ -149,6 +149,7 @@ describe("thread command dispatch", () => {
           },
           target: { mode: "start" },
           resumeContext: {
+            nativeSession: null,
             bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
             workspaceContext: {
               workspacePath: "/tmp/env-stale",
@@ -280,7 +281,13 @@ describe("thread command dispatch", () => {
     await expect(fs.readFile(stagedImage.path, "utf8")).resolves.toBe(
       "content:screenshot-uploaded.png",
     );
-    expect((await fs.stat(stagedFile.path)).mode & 0o777).toBe(0o600);
+    const stagedFileStat = await fs.stat(stagedFile.path);
+    expect(stagedFileStat.isFile()).toBe(true);
+    if (process.platform === "win32") {
+      expect(stagedFileStat.mode & 0o200).toBe(0o200);
+    } else {
+      expect(stagedFileStat.mode & 0o777).toBe(0o600);
+    }
 
     await fs.rm(path.join(threadStorageRootPath, "thread-attachments"), {
       recursive: true,
@@ -322,6 +329,7 @@ describe("thread command dispatch", () => {
           permissionEscalation: null,
         },
         resumeContext: {
+          nativeSession: null,
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           workspaceContext: {
             workspacePath: "/tmp/env-submit-attachments",
@@ -571,6 +579,7 @@ describe("thread command dispatch", () => {
           permissionEscalation: null,
         },
         resumeContext: {
+          nativeSession: null,
           workspaceContext: {
             workspacePath: "/tmp/env-bridge-resume",
           },
@@ -687,6 +696,7 @@ describe("thread command dispatch", () => {
             permissionEscalation: null,
           },
           resumeContext: {
+            nativeSession: null,
             bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
             workspaceContext: {
               workspacePath: "/tmp/env-reaped-during-staging",
@@ -1141,6 +1151,7 @@ describe("thread command dispatch", () => {
             permissionEscalation: null,
           },
           resumeContext: {
+            nativeSession: null,
             bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
             workspaceContext: {
               workspacePath: "/tmp/env-runtime-failed-turn-attachments",
@@ -1446,6 +1457,7 @@ describe("thread command dispatch", () => {
           permissionEscalation: null,
         },
         resumeContext: {
+          nativeSession: null,
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           workspaceContext: {
             workspacePath: "/tmp/env-resume-after-archive",
@@ -1537,6 +1549,7 @@ describe("thread command dispatch", () => {
           permissionEscalation: null,
         },
         resumeContext: {
+          nativeSession: null,
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           workspaceContext: {
             workspacePath: "/tmp/env-1",
@@ -1573,6 +1586,7 @@ describe("thread command dispatch", () => {
           permissionEscalation: null,
         },
         resumeContext: {
+          nativeSession: null,
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           workspaceContext: {
             workspacePath: "/tmp/env-1",
@@ -1632,6 +1646,7 @@ describe("thread command dispatch", () => {
           permissionEscalation: null,
         },
         resumeContext: {
+          nativeSession: null,
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           workspaceContext: {
             workspacePath: "/tmp/env-1",
@@ -1671,6 +1686,7 @@ describe("thread command dispatch", () => {
           permissionEscalation: null,
         },
         resumeContext: {
+          nativeSession: null,
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           workspaceContext: {
             workspacePath: "/tmp/env-1",
@@ -1726,6 +1742,7 @@ describe("thread command dispatch", () => {
           permissionEscalation: null,
         },
         resumeContext: {
+          nativeSession: null,
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           workspaceContext: {
             workspacePath: "/tmp/env-1",
@@ -1751,6 +1768,75 @@ describe("thread command dispatch", () => {
         threadId: "thread-1",
       },
     ]);
+  });
+
+  it("hands a fresh daemon's runtime the imported session intent from the wire", async () => {
+    const harness = createHarness();
+    await harness.manager.ensureEnvironment({
+      environmentId: "env-1",
+      workspacePath: "/tmp/env-1",
+    });
+    const baselineOptions = {
+      model: "gpt-5.6-luna",
+      serviceTier: "default",
+      reasoningLevel: "low",
+      providerOptions: {},
+      permissionMode: "accept-edits",
+      permissionScope: "workspace",
+      approvalReviewer: "user",
+      permissionEscalation: "ask",
+    } as const;
+
+    await dispatchCommand(
+      {
+        bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
+        type: "turn.submit",
+        environmentId: "env-1",
+        threadId: "thread-imported",
+        requestId: nextClientRequestId(),
+        input: [textPromptInput("continue the imported session")],
+        options: { ...baselineOptions },
+        resumeContext: {
+          nativeSession: {
+            resumeOriginal: true,
+            baselineExecution: {
+              model: baselineOptions.model,
+              permissionMode: baselineOptions.permissionMode,
+              reasoningLevel: baselineOptions.reasoningLevel,
+              serviceTier: baselineOptions.serviceTier,
+            },
+          },
+          bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
+          workspaceContext: {
+            workspacePath: "/tmp/env-1",
+          },
+          projectId: "project-1",
+          providerId: "fake",
+          providerThreadId: "01a07f45-4865-7be1-8c98-d56567822218",
+          instructions: "Be a helpful coding agent.",
+          dynamicTools: [],
+          contributedEnv: [],
+          injectedSkillSources: [],
+          instructionMode: "append",
+        },
+        target: { mode: "start" },
+      },
+      harness.dispatchOptions(),
+    );
+
+    expect(harness.runtimeState.resumedThreadId).toBe("thread-imported");
+    expect(harness.runtimeState.resumedProviderThreadId).toBe(
+      "01a07f45-4865-7be1-8c98-d56567822218",
+    );
+    expect(harness.runtimeState.resumedNativeSession).toEqual({
+      resumeOriginal: true,
+      baselineExecution: {
+        model: baselineOptions.model,
+        permissionMode: baselineOptions.permissionMode,
+        reasoningLevel: baselineOptions.reasoningLevel,
+        serviceTier: baselineOptions.serviceTier,
+      },
+    });
   });
 
   it("re-steers the newer active turn when auto turn.submit sees a stale target", async () => {
@@ -1793,6 +1879,7 @@ describe("thread command dispatch", () => {
           permissionEscalation: null,
         },
         resumeContext: {
+          nativeSession: null,
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           workspaceContext: {
             workspacePath: "/tmp/env-1",
@@ -1869,6 +1956,7 @@ describe("thread command dispatch", () => {
           permissionEscalation: null,
         },
         resumeContext: {
+          nativeSession: null,
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           workspaceContext: {
             workspacePath: "/tmp/env-1",
@@ -1928,6 +2016,7 @@ describe("thread command dispatch", () => {
           permissionEscalation: null,
         },
         resumeContext: {
+          nativeSession: null,
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           workspaceContext: {
             workspacePath: "/tmp/env-1",
@@ -1982,6 +2071,7 @@ describe("thread command dispatch", () => {
           permissionEscalation: null,
         },
         resumeContext: {
+          nativeSession: null,
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           workspaceContext: {
             workspacePath: "/tmp/env-1",
@@ -2032,6 +2122,7 @@ describe("thread command dispatch", () => {
           permissionEscalation: null,
         },
         resumeContext: {
+          nativeSession: null,
           bridgeLaunch: resumeLaunch,
           workspaceContext: {
             workspacePath: "/tmp/env-lazy",
@@ -2130,6 +2221,7 @@ describe("thread command dispatch", () => {
           permissionEscalation: null,
         },
         resumeContext: {
+          nativeSession: null,
           bridgeLaunch: DISPATCH_TEST_BRIDGE_LAUNCH,
           workspaceContext: {
             workspacePath: "/tmp/env-exit",

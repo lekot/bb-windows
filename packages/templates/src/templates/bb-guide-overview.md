@@ -7,6 +7,11 @@ editingNotes: Keep this concise. Concepts only — command details belong in cha
 ---
 bb is an agent orchestration tool for managing multiple agents.
 
+The Windows source fork uses `pwsh -File scripts/windows/bb.ps1 -Action
+Start|Stop|Status` for instance lifecycle and `apps/host-daemon/dist/bb.cmd` for
+CLI commands. Default access is loopback; `-Lan` is explicit. See
+`README.windows.md` in the checkout for installation and update scripts.
+
 Core concepts:
 
 - Project — maps to a repository. All threads belong to a project.

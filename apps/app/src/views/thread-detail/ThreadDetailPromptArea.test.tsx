@@ -45,6 +45,7 @@ import { makePluginRegistrationSet } from "@/test/fixtures/plugins";
 
 const mocks = vi.hoisted(() => ({
   cancelThreadPlanMutate: vi.fn(),
+  compactThreadRequest: vi.fn(),
   clearThreadGoalMutate: vi.fn(),
   createQueuedMessageMutateAsync: vi.fn(),
   defaultExecutionOptions: null as ResolvedThreadExecutionOptions | null,
@@ -509,6 +510,28 @@ vi.mock("@/hooks/useThreadCreationOptions", () => ({
   },
 }));
 
+vi.mock("@/hooks/queries/native-context-window", () => ({
+  useNativeContextWindow: () => ({ usage: null, note: null }),
+}));
+
+vi.mock("@/hooks/queries/native-permission-mismatch", () => ({
+  useNativePermissionMismatch: () => null,
+}));
+
+vi.mock("@/hooks/queries/native-quota-query", () => ({
+  useNativeQuota: () => ({ data: undefined }),
+}));
+
+vi.mock("@/hooks/queries/system-queries", async (importOriginal) => {
+  const original = await importOriginal<
+    Record<string, unknown>
+  >();
+  return {
+    ...original,
+    useSystemProviderInfo: () => null,
+  };
+});
+
 vi.mock("@/hooks/mutations/project-mutations", () => ({
   useUploadPromptAttachment: () => ({
     isPending: false,
@@ -520,6 +543,14 @@ vi.mock("@/hooks/mutations/thread-runtime-mutations", () => ({
   useCancelThreadPlan: () => ({
     isPending: false,
     mutate: mocks.cancelThreadPlanMutate,
+  }),
+  useCompactThread: () => ({
+    request: mocks.compactThreadRequest,
+    stateFor: () => ({
+      inFlight: false,
+      error: null,
+      disabledReason: null,
+    }),
   }),
   useClearThreadGoal: () => ({
     isPending: false,

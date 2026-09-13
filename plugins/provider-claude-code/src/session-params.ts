@@ -48,12 +48,10 @@ function buildClaudeSkillConfigParams(
   }
 
   return {
-    plugins: skillRoots.map(
-      (skillRoot): ClaudeLocalPluginConfig => ({
-        type: "local",
-        path: skillRoot.localPluginPath,
-      }),
-    ),
+    plugins: skillRoots.map((skillRoot): ClaudeLocalPluginConfig => ({
+      type: "local",
+      path: skillRoot.localPluginPath,
+    })),
   };
 }
 
@@ -74,6 +72,7 @@ export type ClaudeSessionExecutionOptions = RuntimePermissionPolicy & {
   envVars?: Record<string, string> | undefined;
   claudeCodePermissionMode?: "plan" | undefined;
   workflowsEnabled: boolean;
+  idleQueryReleaseEnabled?: boolean | undefined;
   chromeEnabled: boolean;
   memoryEnabled?: boolean | undefined;
   providerSubagentsEnabled?: boolean | undefined;
@@ -133,6 +132,7 @@ function buildInternalSessionParams(
       ? { reasoningLevel: args.options.reasoningLevel }
       : {}),
     workflowsEnabled: args.options.workflowsEnabled,
+    idleQueryReleaseEnabled: args.options.idleQueryReleaseEnabled ?? false,
     chromeEnabled: args.options.chromeEnabled,
     memoryEnabled: args.options.memoryEnabled,
     providerSubagentsEnabled: args.options.providerSubagentsEnabled,
@@ -147,6 +147,7 @@ const claudeProviderOptionsSchema = z
   .object({
     claudeCodePermissionMode: z.literal("plan").optional(),
     workflowsEnabled: z.boolean().optional(),
+    idleQueryReleaseEnabled: z.boolean().optional(),
     chromeEnabled: z.boolean().optional(),
     memoryEnabled: z.boolean().optional(),
     providerSubagentsEnabled: z.boolean().optional(),
@@ -192,6 +193,7 @@ export function buildClaudeSessionParams(
       skillRoots: args.skillRoots,
       claudeCodePermissionMode: providerOptions.claudeCodePermissionMode,
       workflowsEnabled: providerOptions.workflowsEnabled ?? false,
+      idleQueryReleaseEnabled: providerOptions.idleQueryReleaseEnabled ?? false,
       chromeEnabled: providerOptions.chromeEnabled ?? false,
       memoryEnabled: providerOptions.memoryEnabled,
       providerSubagentsEnabled: providerOptions.providerSubagentsEnabled,
@@ -242,11 +244,13 @@ export function buildClaudeTurnParams(
       ? { reasoningLevel: args.options.reasoningLevel }
       : {}),
     workflowsEnabled: providerOptions.workflowsEnabled,
+    idleQueryReleaseEnabled: providerOptions.idleQueryReleaseEnabled,
     chromeEnabled: providerOptions.chromeEnabled,
     memoryEnabled: providerOptions.memoryEnabled,
     providerSubagentsEnabled: providerOptions.providerSubagentsEnabled,
     ...(config ? { config } : {}),
     permissionEscalation: args.options.permissionEscalation,
+    permissionMode: toClaudePermissionMode(args.options),
     ...(providerOptions.claudeCodePermissionMode !== undefined
       ? { claudeCodePermissionMode: providerOptions.claudeCodePermissionMode }
       : {}),

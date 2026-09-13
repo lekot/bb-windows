@@ -415,6 +415,30 @@ describe("core environment orchestration", () => {
       expect(fixture.row().claimPath).toBeNull();
     }));
 
+  it("claims Windows drive-letter workspace paths with normalized separators", async () =>
+    withTestHarness(async (harness) => {
+      const fixture = setup(harness, {
+        create: async (context) => {
+          await expect(
+            context.experimental_claimPath("relative/path"),
+          ).rejects.toThrow();
+          expect(
+            await context.experimental_claimPath("C:\\checkouts\\repo\\"),
+          ).toBe(true);
+          return {
+            status: "created" as const,
+            path: "C:\\checkouts\\repo",
+            ownsPath: false,
+          };
+        },
+      });
+      fixture.ask();
+      await fixture.settled();
+      expect(fixture.row()).toMatchObject({
+        claimPath: "C:\\checkouts\\repo",
+      });
+    }));
+
   it("finalizes a workspace path already claimed by the same launch", async () =>
     withTestHarness(async (harness) => {
       const fixture = setup(harness, {

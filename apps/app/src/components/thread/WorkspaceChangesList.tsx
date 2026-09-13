@@ -29,7 +29,7 @@ const WORKSPACE_CHANGE_ROW_CLASS =
 export const WORKSPACE_CHANGES_LIST_MAX_ROWS = 200;
 
 function formatHiddenFileCount(count: number): string {
-  return `${count.toLocaleString()} more ${count === 1 ? "file" : "files"} not shown`;
+  return `${count.toLocaleString("en-US")} more ${count === 1 ? "file" : "files"} not shown`;
 }
 
 function fileKey(file: WorkspaceChangedFile): string {

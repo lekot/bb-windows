@@ -114,6 +114,41 @@ describe("voice transcription", () => {
     }
   });
 
+  it("sends local-whisper audio to the configured ASR endpoint", async () => {
+    const harness = await createTestAppHarness({
+      localWhisperLanguage: "ru",
+      localWhisperUrl: "http://127.0.0.1:9003/asr",
+      transcriptionModel: "local-whisper/medium",
+    });
+    const fetchStub = vi.fn(
+      async (_input: FetchInput, _init?: FetchInit): FetchResult =>
+        new Response(JSON.stringify({ text: "локальная расшифровка" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchStub);
+    try {
+      expect(resolveVoiceTranscriptionEnabled(harness.deps)).toBe(true);
+      await expect(
+        transcribeVoiceInput(harness.deps, { file: voiceFile() }),
+      ).resolves.toBe("локальная расшифровка");
+      const [input, init] = fetchStub.mock.calls[0]!;
+      const url = new URL(String(input));
+      expect(url.pathname).toBe("/asr");
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        task: "transcribe",
+        language: "ru",
+        output: "json",
+      });
+      expect(init?.body).toBeInstanceOf(FormData);
+      expect((init?.body as FormData).get("audio_file")).toBeInstanceOf(File);
+    } finally {
+      vi.unstubAllGlobals();
+      await harness.cleanup();
+    }
+  });
+
   it("rejects audio above the plugin-served cap before calling the service", async () => {
     const harness = await createServiceTranscriptionHarness(() => {
       throw new Error("Oversized audio must not reach the service");

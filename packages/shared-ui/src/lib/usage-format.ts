@@ -34,7 +34,7 @@ export function formatUsdCents(
   cents: number,
   alwaysShowCents: boolean,
 ): string {
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     minimumFractionDigits: alwaysShowCents || cents % 100 !== 0 ? 2 : 0,

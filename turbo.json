@@ -2,6 +2,17 @@
   "$schema": "https://turbo.build/schema.json",
   "globalEnv": ["BB_BUILD_TOOLCHAIN"],
   "tasks": {
+    "//#test:windows:lifecycle": {
+      "cache": false,
+      "dependsOn": [
+        "//#ensure-native-modules",
+        "@bb/server#build",
+        "@bb/host-daemon#build",
+        "@bb/app#build",
+        "@bb/bundled-plugins#build"
+      ],
+      "outputs": []
+    },
     "@bb/db#db:generate": { "cache": false },
     "@bb/desktop#smoke:browser-broker": {
       "cache": false,
@@ -905,6 +916,9 @@
     "bb-plugin-push-notifications#typecheck": {
       "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
     },
+    "bb-plugin-project-preflight#typecheck": {
+      "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
+    },
     "bb-plugin-keep-awake#typecheck": {
       "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
     },
@@ -914,6 +928,11 @@
     "bb-plugin-monaco-editor#typecheck": {
       "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
     },
+    "bb-plugin-monaco-editor#build:app": {
+      "dependsOn": ["@bb/plugin-build#generate"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/packages/plugin-build/src/**", "$TURBO_ROOT$/packages/bb-app/package.json"],
+      "outputs": ["dist/app.js", "dist/app.css", "dist/app.meta.json"]
+    },
     "bb-plugin-pdf-preview#typecheck": {
       "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
     },
@@ -922,6 +941,10 @@
     },
     "bb-plugin-provider-acp#typecheck": {
       "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]
+    },
+    "bb-plugin-provider-acp#build": {
+      "dependsOn": ["@get-bb/plugin-sdk#build:runtime"],
+      "outputs": ["dist/**"]
     },
     "bb-plugin-provider-claude-code#typecheck": {
       "dependsOn": ["@get-bb/plugin-sdk#build:types", "topo"]

@@ -30,6 +30,28 @@ afterEach(() => {
 });
 
 describe("getProviderIconInfo", () => {
+  it("uses the native ZCode image instead of the generic custom-agent glyph", () => {
+    const info = getProviderIconInfo("agent", "acp-zcode", {
+      logoUrl: null,
+      icon: { glyph: "Toolbox" },
+      family: "acp",
+      displayName: "ZCode",
+    });
+    if (!info) throw new Error("Expected ZCode icon");
+    const view = render(createElement(info.icon, { className: "size-4" }));
+    expect(view.container.querySelector("img")?.getAttribute("src")).toBe(
+      "/zcode-app-icon.png",
+    );
+    expect(view.container.querySelector("img")?.classList).toContain(
+      "-translate-y-px",
+    );
+    expect(view.container.querySelector("img")?.classList).not.toContain(
+      "-translate-y-0.5",
+    );
+    expect(view.container.querySelector('[data-icon="Toolbox"]')).toBeNull();
+    view.unmount();
+  });
+
   it("isolates same-id providers, prefers specific overrides, and restores legacy and asset fallbacks on unload", () => {
     const kinds = ["agent", "machine", "environment"] as const;
     const legacy = collectPluginAppRegistrations(

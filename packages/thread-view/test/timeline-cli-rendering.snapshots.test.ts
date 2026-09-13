@@ -587,6 +587,33 @@ describe("timeline CLI rendering snapshots", () => {
     expect(timeline.text).not.toContain("steer pending");
   });
 
+  it("closes an unaccepted steer when its target turn finishes", () => {
+    const event = createTimelineEventFactory({ threadId: "thread-1" });
+    const request = event.clientTurnRequested({
+      target: { kind: "steer", expectedTurnId: "turn-1" },
+      text: "Apply this before finishing",
+    });
+    const timeline = renderIdleTimeline([
+      event.turnStarted({ turnId: "turn-1" }),
+      request,
+      event.turnCompleted({ turnId: "turn-1", status: "failed" }),
+    ]);
+
+    const steerRow = timeline.rows.find(
+      (
+        row,
+      ): row is Extract<TimelineRow, { kind: "conversation"; role: "user" }> =>
+        row.kind === "conversation" && row.role === "user",
+    );
+    expect(steerRow?.turnRequest).toEqual({
+      isGrouped: false,
+      kind: "steer",
+      status: "rejected",
+    });
+    expect(timeline.text).toContain("steer failed");
+    expect(timeline.text).not.toContain("steer pending");
+  });
+
   it("closes a legacy unmatched steer after its command failure", () => {
     const event = createTimelineEventFactory({ threadId: "thread-1" });
     const timeline = renderIdleTimeline([

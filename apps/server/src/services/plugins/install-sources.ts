@@ -13,7 +13,7 @@ import {
   rm,
   stat,
 } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import semver from "semver";
 import { resolvePluginNpmCli } from "@bb/plugin-build";
 import {
@@ -178,10 +178,19 @@ function parseGitSource(spec: string): ParsedPluginSource {
     url = urlish;
     host = parsed.host;
     repoPath = parsed.pathname.replace(/^\/+|\/+$/g, "").replace(/\.git$/, "");
-  } else if (urlish.startsWith("/")) {
+  } else if (isAbsolute(urlish)) {
     url = urlish;
     host = "local";
-    repoPath = urlish.replace(/^\/+/, "").replace(/\.git$/, "");
+    const normalizedLocalPath = urlish
+      .replaceAll("\\", "/")
+      .replace(/^\/+/, "")
+      .replace(/\.git$/, "");
+    repoPath =
+      process.platform === "win32"
+        ? createHash("sha256")
+            .update(normalizedLocalPath.toLowerCase())
+            .digest("hex")
+        : normalizedLocalPath;
   } else if (/^[a-z0-9]/i.test(urlish)) {
     url = `https://${urlish}`;
     const parsed = new URL(url);

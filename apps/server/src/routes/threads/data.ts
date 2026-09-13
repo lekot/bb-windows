@@ -3,6 +3,7 @@ import { clearTimelineOrderingContextCache } from "../../services/threads/timeli
 import path from "node:path";
 import {
   getAppSettings,
+  getThreadNativeResume,
   getThreadPluginMetadata,
   patchThreadPluginMetadata,
   getLatestCompletedThreadContextClearSequence,
@@ -23,6 +24,8 @@ import {
   typedRoutes,
   type PublicApiSchema,
   type ThreadConversationOutlineResponse,
+  type ThreadNativeHistoryResponse,
+  type ThreadNativeImageQuery,
   type ThreadTimelineQuery,
 } from "@bb/server-contract";
 import type {
@@ -41,7 +44,10 @@ import {
   threadEnvironmentUnavailableDetails,
   throwThreadEnvironmentUnavailable,
 } from "../../services/lib/lifecycle-api-errors.js";
-import { callHostRetryableOnlineRpc } from "../../services/hosts/online-rpc.js";
+import {
+  callHostOnlineRpc,
+  callHostRetryableOnlineRpc,
+} from "../../services/hosts/online-rpc.js";
 import {
   createDaemonFileContentResponse,
   type DaemonFileReadResult,
@@ -80,6 +86,7 @@ import {
   getLastThreadOutput,
   listThreadEventRows,
 } from "../../services/threads/thread-data.js";
+import { getLastProviderThreadId } from "../../services/threads/thread-events.js";
 import { listThreadPromptHistory } from "../../services/prompt-history.js";
 import { tryResolveExistingThreadExecutionPlan } from "../../services/threads/thread-execution-plan.js";
 import {
@@ -127,6 +134,35 @@ const RAW_FILE_HTML_CONTENT_TYPE = "text/html; charset=utf-8";
 const RAW_FILE_CONTENT_TYPE_OPTIONS = "nosniff";
 const HTML_PREVIEW_MAX_BYTES = 5 * 1024 * 1024;
 const GENERIC_HTML_PREVIEW_CSP = "sandbox allow-scripts";
+
+const UNSUPPORTED_NATIVE_HISTORY: ThreadNativeHistoryResponse = {
+  supported: false,
+  revision: null,
+  contextUsage: null,
+  messages: [],
+  nextCursor: null,
+  metadata: {
+    title: null,
+    model: null,
+    permissionMode: null,
+  },
+  truncated: false,
+};
+
+const EMPTY_BB_NATIVE_HISTORY: ThreadNativeHistoryResponse = {
+  supported: true,
+  revision: null,
+  contextUsage: null,
+  messages: [],
+  nextCursor: null,
+  metadata: {
+    title: null,
+    model: null,
+    permissionMode: null,
+    sessionOrigin: "bb",
+  },
+  truncated: false,
+};
 
 function parseThreadEventTypes(
   value: string | undefined,
@@ -306,7 +342,7 @@ async function serveThreadWorktreeRawFile(
 }
 
 export function registerThreadDataRoutes(app: Hono, deps: AppDeps): void {
-  const { get, patch } = typedRoutes<PublicApiSchema>(app, {
+  const { get, patch, post } = typedRoutes<PublicApiSchema>(app, {
     onValidationError: (msg) => new ApiError(400, "invalid_request", msg),
   });
   const routes = publicApiRoutes.threads;
@@ -562,6 +598,414 @@ export function registerThreadDataRoutes(app: Hono, deps: AppDeps): void {
         limit,
       }),
     );
+  });
+
+  get(routes.nativeHistory, async (context, query) => {
+    const thread = requirePublicThread(deps.db, context.req.param("id"));
+    const resumesNativeSession =
+      getThreadNativeResume(deps.db, thread.id) !== null;
+    const reader = deps.providerRegistry.nativeHistoryReader(thread.providerId);
+    if (reader === null) {
+      return context.json(UNSUPPORTED_NATIVE_HISTORY);
+    }
+    if (thread.environmentId === null) {
+      throw new ApiError(
+        409,
+        "native_history_unavailable",
+        "Native history requires the thread's original environment",
+      );
+    }
+    const environment = requireEnvironment(deps.db, thread.environmentId);
+    if (environment.path === null) {
+      throw new ApiError(
+        409,
+        "native_history_unavailable",
+        "Native history requires the thread's original workspace path",
+      );
+    }
+    const sessionId = getLastProviderThreadId(deps, thread.id);
+    if (sessionId === null) {
+      if (!resumesNativeSession) {
+        return context.json(EMPTY_BB_NATIVE_HISTORY);
+      }
+      throw new ApiError(
+        409,
+        "native_history_unavailable",
+        "Native session identity is unavailable for this thread",
+      );
+    }
+    const limit = parseBoundedPositiveOptionalInteger({
+      defaultValue: 20,
+      max: 100,
+      name: "limit",
+      value: query.limit,
+    });
+    try {
+      const result =
+        reader === "claude-transcript"
+          ? await callHostRetryableOnlineRpc(deps, {
+              hostId: environment.hostId,
+              timeoutMs: COMMAND_TIMEOUT_MS,
+              command: {
+                type: "host.read_native_claude_history",
+                before: query.before ?? null,
+                cwd: environment.path,
+                limit,
+                sessionId,
+              },
+            })
+          : await callHostRetryableOnlineRpc(deps, {
+              hostId: environment.hostId,
+              timeoutMs: COMMAND_TIMEOUT_MS,
+              command: {
+                type: "host.read_native_history",
+                before: query.before ?? null,
+                cwd: environment.path,
+                limit,
+                reader,
+                sessionId,
+              },
+            });
+      const hostContextUsage = result.contextUsage;
+      const contextUsage =
+        hostContextUsage === null
+          ? null
+          : {
+              usedTokens: hostContextUsage.usedTokens,
+              observedAt: hostContextUsage.observedAt,
+              model: hostContextUsage.model,
+              contextWindow:
+                "contextWindow" in hostContextUsage &&
+                typeof hostContextUsage.contextWindow === "number"
+                  ? hostContextUsage.contextWindow
+                  : null,
+            };
+      return context.json({
+        supported: true,
+        ...result,
+        contextUsage,
+        metadata: {
+          ...result.metadata,
+          sessionOrigin: resumesNativeSession ? "native" : "bb",
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        error.body.code === "native_history_missing"
+      ) {
+        if (!resumesNativeSession) {
+          return context.json(EMPTY_BB_NATIVE_HISTORY);
+        }
+        throw new ApiError(
+          404,
+          "native_history_missing",
+          "Native transcript was not found for this session and cwd",
+        );
+      }
+      throw error;
+    }
+  });
+
+  const readThreadNativeImage = async (
+    threadId: string,
+    query: ThreadNativeImageQuery,
+  ) => {
+    const thread = requirePublicThread(deps.db, threadId);
+    if (
+      deps.providerRegistry.nativeHistoryReader(thread.providerId) !==
+      "zcode-sqlite"
+    ) {
+      throw new ApiError(
+        404,
+        "native_image_unavailable",
+        "Native image reading is unavailable for this provider",
+      );
+    }
+    if (thread.environmentId === null)
+      throw new ApiError(
+        409,
+        "native_image_unavailable",
+        "Native image requires the original environment",
+      );
+    const environment = requireEnvironment(deps.db, thread.environmentId);
+    const sessionId = getLastProviderThreadId(deps, thread.id);
+    if (environment.path === null || sessionId === null)
+      throw new ApiError(
+        409,
+        "native_image_unavailable",
+        "Native session identity or workspace is unavailable",
+      );
+    const result = await callHostRetryableOnlineRpc(deps, {
+      hostId: environment.hostId,
+      timeoutMs: COMMAND_TIMEOUT_MS,
+      command: {
+        type: "host.read_native_image",
+        cwd: environment.path,
+        sessionId,
+        messageId: query.messageId,
+        attachmentId: query.attachmentId,
+      },
+    });
+    return result;
+  };
+
+  get(routes.nativeImage, async (context, query) => {
+    const result = await readThreadNativeImage(context.req.param("id"), query);
+    context.header("Cache-Control", "no-store");
+    return context.json(result);
+  });
+
+  get(routes.nativeImageContent, async (context, query) => {
+    const result = await readThreadNativeImage(context.req.param("id"), query);
+    return new Response(Uint8Array.from(Buffer.from(result.base64, "base64")), {
+      headers: {
+        "Content-Type": result.mimeType,
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
+      },
+    });
+  });
+
+  get(routes.nativeQuota, async (context) => {
+    const thread = requirePublicThread(deps.db, context.req.param("id"));
+    const reader = deps.providerRegistry.nativeHistoryReader(thread.providerId);
+    if (reader !== "zcode-sqlite") {
+      return context.json({
+        supported: false,
+        status: "unavailable",
+        fiveHour: null,
+        toolCalls: null,
+        fetchedAt: null,
+        reason: null,
+      });
+    }
+    if (thread.environmentId === null) {
+      return context.json({
+        supported: true,
+        status: "unavailable",
+        fiveHour: null,
+        toolCalls: null,
+        fetchedAt: null,
+        reason: "Native quota requires the thread's original environment",
+      });
+    }
+    const environment = requireEnvironment(deps.db, thread.environmentId);
+    if (environment.hostId === null) {
+      return context.json({
+        supported: true,
+        status: "unavailable",
+        fiveHour: null,
+        toolCalls: null,
+        fetchedAt: null,
+        reason: "Native quota requires a connected host",
+      });
+    }
+    const result = await callHostRetryableOnlineRpc(deps, {
+      hostId: environment.hostId,
+      timeoutMs: COMMAND_TIMEOUT_MS,
+      command: { type: "host.read_zcode_quota" },
+    });
+    if (result.status === "ok") {
+      return context.json({
+        supported: true,
+        status: "ok",
+        fiveHour: result.fiveHour,
+        toolCalls: result.toolCalls,
+        fetchedAt: result.fetchedAt,
+        reason: null,
+      });
+    }
+    return context.json({
+      supported: true,
+      status: result.status,
+      fiveHour: null,
+      toolCalls: null,
+      fetchedAt: null,
+      reason: result.reason,
+    });
+  });
+
+  get(routes.desktopSync, async (context) => {
+    const thread = requirePublicThread(deps.db, context.req.param("id"));
+    const reader = deps.providerRegistry.nativeHistoryReader(thread.providerId);
+    if (reader !== "zcode-sqlite") {
+      return context.json({
+        supported: false,
+        nativeSessionId: null,
+        nativeHistoryStatus: "unavailable",
+        lastNativeMessageAt: null,
+        desktopStatus: "unavailable",
+        desktopTitle: null,
+        desktopWorkspacePath: null,
+        reason: "Desktop sync diagnostics require the ZCode provider",
+      });
+    }
+    const sessionId = getLastProviderThreadId(deps, thread.id);
+    if (sessionId === null) {
+      return context.json({
+        supported: true,
+        nativeSessionId: null,
+        nativeHistoryStatus: "unavailable",
+        lastNativeMessageAt: null,
+        desktopStatus: "unavailable",
+        desktopTitle: null,
+        desktopWorkspacePath: null,
+        reason: "Native session identity is unavailable for this thread",
+      });
+    }
+    if (thread.environmentId === null) {
+      return context.json({
+        supported: true,
+        nativeSessionId: sessionId,
+        nativeHistoryStatus: "unavailable",
+        lastNativeMessageAt: null,
+        desktopStatus: "unavailable",
+        desktopTitle: null,
+        desktopWorkspacePath: null,
+        reason: "Desktop sync requires the thread's original environment",
+      });
+    }
+    const environment = requireEnvironment(deps.db, thread.environmentId);
+    if (environment.hostId === null) {
+      return context.json({
+        supported: true,
+        nativeSessionId: sessionId,
+        nativeHistoryStatus: "unavailable",
+        lastNativeMessageAt: null,
+        desktopStatus: "unavailable",
+        desktopTitle: null,
+        desktopWorkspacePath: null,
+        reason: "Desktop sync requires a connected host",
+      });
+    }
+    const [historyResult, desktopResult] = await Promise.allSettled([
+      callHostRetryableOnlineRpc(deps, {
+        hostId: environment.hostId,
+        timeoutMs: COMMAND_TIMEOUT_MS,
+        command: {
+          type: "host.read_native_history",
+          before: null,
+          cwd: environment.path ?? "",
+          limit: 1,
+          reader,
+          sessionId,
+        },
+      }),
+      callHostRetryableOnlineRpc(deps, {
+        hostId: environment.hostId,
+        timeoutMs: COMMAND_TIMEOUT_MS,
+        command: {
+          type: "host.check_zcode_desktop_registration",
+          sessionId,
+        },
+      }),
+    ]);
+    const history =
+      historyResult.status === "fulfilled" ? historyResult.value : null;
+    const desktop =
+      desktopResult.status === "fulfilled" ? desktopResult.value : null;
+    const nativeHistoryStatus = history === null ? "unavailable" : "ok";
+    const lastNativeMessageAt =
+      history !== null && history.messages.length > 0
+        ? (history.messages[history.messages.length - 1]?.timestamp ?? null)
+        : null;
+    const desktopStatus = desktop === null ? "unavailable" : desktop.status;
+    const reason =
+      desktop !== null && desktop.status === "unavailable"
+        ? desktop.reason
+        : history === null
+          ? "Native history read failed"
+          : null;
+    return context.json({
+      supported: true,
+      nativeSessionId: sessionId,
+      nativeHistoryStatus,
+      lastNativeMessageAt,
+      desktopStatus,
+      desktopTitle:
+        desktop !== null && desktop.status === "registered"
+          ? desktop.title
+          : null,
+      desktopWorkspacePath:
+        desktop !== null && desktop.status === "registered"
+          ? desktop.workspacePath
+          : null,
+      reason,
+    });
+  });
+
+  post(routes.desktopRegister, async (context, payload) => {
+    const thread = requirePublicThread(deps.db, context.req.param("id"));
+    const sessionId = getLastProviderThreadId(deps, thread.id);
+    const unavailable = (reason: string) =>
+      context.json({
+        supported: true,
+        nativeSessionId: sessionId,
+        outcome: { status: "unavailable", reason },
+        reason,
+      });
+    if (
+      deps.providerRegistry.nativeHistoryReader(thread.providerId) !==
+      "zcode-sqlite"
+    ) {
+      return context.json({
+        supported: false,
+        nativeSessionId: null,
+        outcome: {
+          status: "unavailable",
+          reason: "Desktop registration requires the ZCode provider",
+        },
+        reason: "Desktop registration requires the ZCode provider",
+      });
+    }
+    if (sessionId === null) {
+      return unavailable(
+        "Native session identity is unavailable for this thread",
+      );
+    }
+    if (thread.environmentId === null) {
+      return unavailable(
+        "Desktop registration requires the thread's original environment",
+      );
+    }
+    const environment = requireEnvironment(deps.db, thread.environmentId);
+    if (environment.hostId === null) {
+      return unavailable("Desktop registration requires a connected host");
+    }
+    if (environment.path === null || environment.path.length === 0) {
+      return unavailable(
+        "Desktop registration requires the original workspace path",
+      );
+    }
+    let result;
+    try {
+      result = await callHostOnlineRpc(deps, {
+        hostId: environment.hostId,
+        timeoutMs: COMMAND_TIMEOUT_MS,
+        command: {
+          type: "host.register_zcode_desktop_task",
+          sessionId,
+          cwd: environment.path,
+          title: thread.title ?? thread.titleFallback ?? "bb native session",
+          apply: payload.apply,
+        },
+      });
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message : "host call failed";
+      return unavailable(`Desktop registration host call failed: ${detail}`);
+    }
+    const reason =
+      result.status === "rejected" || result.status === "unavailable"
+        ? result.reason
+        : null;
+    return context.json({
+      supported: true,
+      nativeSessionId: sessionId,
+      outcome: result,
+      reason,
+    });
   });
 
   get(routes.events, (context, query) => {

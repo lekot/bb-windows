@@ -141,7 +141,9 @@ describe("buildPluginApp", () => {
     );
     expect(css).toMatch(/\.rounded-lg\s*\{[^}]*var\(--radius\)/);
     expect(css).toMatch(/\.text-sm\s*\{[^}]*var\(--text-sm/);
-    expect(css).toContain("--text-sm:.8125rem");
+    expect(css).toMatch(
+      /--text-sm:calc\(\.8125rem\s*\*\s*var\(--bb-typography-size\)\s*\*\s*var\(--bb-font-scale\)\)/,
+    );
     expect(css).toContain(".animate-in");
     expect(css).toContain(".fade-in-0");
     const scope =
@@ -382,9 +384,9 @@ describe("buildPluginApp", () => {
     expect(css).toContain(".rounded-md");
 
     (globalThis as { __bbPluginRuntime?: unknown }).__bbPluginRuntime = {
-      react: createRequire(new URL("../../../app/package.json", import.meta.url))(
-        "react",
-      ),
+      react: createRequire(
+        new URL("../../../app/package.json", import.meta.url),
+      )("react"),
       reactDom: {},
       jsxRuntime: { jsx: () => ({}), jsxs: () => ({}), Fragment: {} },
       classVarianceAuthority: { cva: () => () => "" },
@@ -407,7 +409,7 @@ describe("buildPluginApp", () => {
     } finally {
       delete (globalThis as { __bbPluginRuntime?: unknown }).__bbPluginRuntime;
     }
-  });
+  }, 30_000);
 });
 
 async function linkScaffoldDeps(

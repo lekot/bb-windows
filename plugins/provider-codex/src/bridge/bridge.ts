@@ -59,11 +59,16 @@ import {
   type CodexMacOsPermissionRequest,
 } from "../interactive-requests.js";
 import { parseModelsResponse } from "../models.js";
+import {
+  codexNativePolicyResumeParams,
+  readCodexNativePolicy,
+} from "./native-policy.js";
 import { macOsPermissionPresentation } from "../presentation.js";
 import {
   resolveCodexInstructionOverrides,
   toCodexDynamicTools,
   toCodexPermissionSettings,
+  toCodexReasoningEffort,
   toCodexServiceTier,
   toCodexThreadPermissionSettings,
   toCodexUserInput,
@@ -408,9 +413,107 @@ interface CodexSessionConstruction {
   dynamicTools: DynamicTool[] | undefined;
 }
 
+interface NativeSettingsSnapshot {
+  effort: string | null;
+  model: string | null;
+  permissions: string;
+  serviceTier: string | null;
+}
+
+const nativeOverridesSchema = z
+  .object({
+    model: z.boolean(),
+    permissions: z.boolean(),
+    reasoningLevel: z.boolean(),
+    serviceTier: z.boolean(),
+  })
+  .strict();
+
+function nativeOverridesRequestFields(value: unknown): {
+  nativeOverrides?: NativeSettingsOverrides;
+  permissionsOverridden?: true;
+} {
+  const parsed = nativeOverridesSchema.safeParse(value);
+  if (!parsed.success) return {};
+  return {
+    nativeOverrides: parsed.data,
+    ...(parsed.data.permissions ? { permissionsOverridden: true as const } : {}),
+  };
+}
+
+interface NativeSettingsOverrides {
+  model: boolean;
+  permissions: boolean;
+  reasoningLevel: boolean;
+  serviceTier: boolean;
+}
+
+interface NativeSettingsOverrideState {
+  effort: boolean;
+  model: boolean;
+  permissions: boolean;
+  serviceTier: boolean;
+}
+
+interface NativeSettingsBaseline {
+  baseline: NativeSettingsSnapshot;
+  overridden: NativeSettingsOverrideState;
+}
+
+function nativeSettingsSnapshot(
+  decoded: DecodedCodexOptions,
+): NativeSettingsSnapshot {
+  const options = decoded.sessionOptions;
+  return {
+    effort: options.reasoningLevel ?? null,
+    model: options.model ?? null,
+    permissions: JSON.stringify({
+      approvalReviewer: options.approvalReviewer,
+      permissionEscalation: options.permissionEscalation,
+      permissionMode: options.permissionMode,
+      permissionScope: options.permissionScope,
+    }),
+    serviceTier: options.serviceTier ?? null,
+  };
+}
+
+function nativeSettingsBaselineFor(
+  resumeOriginal: boolean,
+  decoded: DecodedCodexOptions,
+  restored?: NativeSettingsOverrides,
+): NativeSettingsBaseline | null {
+  return resumeOriginal
+    ? {
+        baseline: nativeSettingsSnapshot(decoded),
+        overridden: {
+          effort: restored?.reasoningLevel === true,
+          model: restored?.model === true,
+          permissions: restored?.permissions === true,
+          serviceTier: restored?.serviceTier === true,
+        },
+      }
+    : null;
+}
+
+function markNativeOverrides(
+  native: NativeSettingsBaseline,
+  decoded: DecodedCodexOptions,
+): NativeSettingsOverrideState {
+  const current = nativeSettingsSnapshot(decoded);
+  native.overridden.effort ||= current.effort !== native.baseline.effort;
+  native.overridden.model ||= current.model !== native.baseline.model;
+  native.overridden.permissions ||=
+    current.permissions !== native.baseline.permissions;
+  native.overridden.serviceTier ||=
+    current.serviceTier !== native.baseline.serviceTier;
+  return native.overridden;
+}
+
 interface CodexBridgeSession {
   bbThreadId: string;
   codexThreadId: string | null;
+  resumeOriginal: boolean;
+  nativeSettings: NativeSettingsBaseline | null;
   serial: number;
   connection: CodexAppServerConnection | null;
   translator: CodexEventTranslator;
@@ -896,7 +999,13 @@ const codexThreadIdentityResultSchema = z
 
 type CodexSessionConstructionRequest =
   | { kind: "start" }
-  | { kind: "resume"; providerThreadId: string }
+  | {
+      kind: "resume";
+      providerThreadId: string;
+      resumeOriginal?: true;
+      permissionsOverridden?: true;
+      nativeOverrides?: NativeSettingsOverrides;
+    }
   | {
       kind: "fork";
       sourceProviderThreadId: string;
@@ -939,6 +1048,13 @@ async function constructThreadSession(
     bbThreadId: args.threadId,
     codexThreadId:
       args.request.kind === "resume" ? args.request.providerThreadId : null,
+    resumeOriginal:
+      args.request.kind === "resume" && args.request.resumeOriginal === true,
+    nativeSettings: nativeSettingsBaselineFor(
+      args.request.kind === "resume" && args.request.resumeOriginal === true,
+      decoded,
+      args.request.kind === "resume" ? args.request.nativeOverrides : undefined,
+    ),
     serial,
     connection: null,
     translator,
@@ -1035,11 +1151,33 @@ async function constructThreadSession(
       }
       case "resume": {
         method = "thread/resume";
-        const resumeParams: BbThreadResumeParams = {
-          threadId: args.request.providerThreadId,
-          excludeTurns: true,
-          ...sharedConstructionParams,
-        };
+        const resumeParams: BbThreadResumeParams = args.request.resumeOriginal
+          ? {
+              threadId: args.request.providerThreadId,
+              excludeTurns: true,
+              cwd: args.cwd,
+              ...(args.request.permissionsOverridden === true
+                ? {
+                    approvalPolicy: sharedConstructionParams.approvalPolicy,
+                    approvalsReviewer:
+                      sharedConstructionParams.approvalsReviewer,
+                    sandbox: sharedConstructionParams.sandbox,
+                    ...(sharedConstructionParams.config === undefined
+                      ? {}
+                      : { config: sharedConstructionParams.config }),
+                  }
+                : codexNativePolicyResumeParams(
+                    await readCodexNativePolicy({
+                      cwd: args.cwd,
+                      sessionId: args.request.providerThreadId,
+                    }),
+                  )),
+            }
+          : {
+              threadId: args.request.providerThreadId,
+              excludeTurns: true,
+              ...sharedConstructionParams,
+            };
         params = resumeParams;
         break;
       }
@@ -1104,6 +1242,8 @@ function registerResumableSession(session: CodexBridgeSession): void {
   sessionsByBbThreadId.set(session.bbThreadId, {
     bbThreadId: session.bbThreadId,
     codexThreadId: session.codexThreadId,
+    resumeOriginal: session.resumeOriginal,
+    nativeSettings: session.nativeSettings,
     serial: sessionSerialCounter,
     connection: null,
     translator: session.translator,
@@ -1142,7 +1282,14 @@ async function rebuildThreadSession(
       ...(session.construction.dynamicTools !== undefined
         ? { dynamicTools: session.construction.dynamicTools }
         : {}),
-      request: { kind: "resume", providerThreadId: codexThreadId },
+      request: {
+        kind: "resume",
+        providerThreadId: codexThreadId,
+        ...(session.resumeOriginal ? { resumeOriginal: true } : {}),
+        ...(session.nativeSettings?.overridden.permissions === true
+          ? { permissionsOverridden: true as const }
+          : {}),
+      },
     });
   } catch (error) {
     if (!(error instanceof CodexSessionReleasedError)) {
@@ -1156,6 +1303,9 @@ async function rebuildThreadSession(
     reason,
     contextLost: false,
   });
+  if (session.nativeSettings !== null) {
+    replacement.session.nativeSettings = session.nativeSettings;
+  }
   return replacement.session;
 }
 
@@ -1358,6 +1508,9 @@ async function requireLiveSessionForTurn(
   }
 
   const decoded = decodeCodexOptions(params.options);
+  if (session.nativeSettings !== null) {
+    markNativeOverrides(session.nativeSettings, decoded);
+  }
   const signature = constructionSignature(
     session.construction.cwd,
     decoded.sessionOptions,
@@ -1466,16 +1619,36 @@ async function handleTurnStart(
         ),
         options: decoded.sessionOptions,
       });
+      const overrides: NativeSettingsOverrideState =
+        session.nativeSettings === null
+          ? { effort: false, model: true, permissions: true, serviceTier: true }
+          : markNativeOverrides(session.nativeSettings, decoded);
+      const reasoningLevel = decoded.sessionOptions.reasoningLevel;
       await connection.request({
         method: "turn/start",
         params: {
           threadId: codexThreadId,
           input: toCodexUserInput(input),
-          approvalPolicy: permissionSettings.approvalPolicy,
-          approvalsReviewer: permissionSettings.approvalsReviewer,
-          sandboxPolicy: permissionSettings.sandboxPolicy,
-          model: decoded.sessionOptions.model ?? undefined,
-          serviceTier: toCodexServiceTier(decoded.sessionOptions.serviceTier),
+          ...(overrides.permissions
+            ? {
+                approvalPolicy: permissionSettings.approvalPolicy,
+                approvalsReviewer: permissionSettings.approvalsReviewer,
+                sandboxPolicy: permissionSettings.sandboxPolicy,
+              }
+            : {}),
+          ...(overrides.model
+            ? { model: decoded.sessionOptions.model ?? undefined }
+            : {}),
+          ...(overrides.serviceTier
+            ? {
+                serviceTier: toCodexServiceTier(
+                  decoded.sessionOptions.serviceTier,
+                ),
+              }
+            : {}),
+          ...(overrides.effort && reasoningLevel !== undefined
+            ? { effort: toCodexReasoningEffort(reasoningLevel) }
+            : {}),
         },
         resultSchema: ignoredChildResultSchema,
         timeoutMs: CHILD_REQUEST_TIMEOUT_MS,
@@ -1791,6 +1964,10 @@ async function handleRequest(
       await handleThreadConstruction(request.id, request.params, {
         kind: "resume",
         providerThreadId: request.params.providerThreadId,
+        ...(request.params.resumeOriginal === true
+          ? { resumeOriginal: true }
+          : {}),
+        ...nativeOverridesRequestFields(request.params.nativeOverrides),
       });
       break;
     case "thread/fork":

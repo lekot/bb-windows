@@ -182,6 +182,12 @@ export function buildPluginProviderRegistration(args: {
       supportsFork: capabilities.fork !== "none",
       supportsSessionRewind: capabilities.fork === "checkpoint",
       modelCatalogScope: declaration.models.scope,
+      ...(capabilities.experimental_nativeHistoryReader === undefined
+        ? {}
+        : {
+            nativeHistoryReader:
+              capabilities.experimental_nativeHistoryReader,
+          }),
     },
     composerActions,
     ...(strings === undefined

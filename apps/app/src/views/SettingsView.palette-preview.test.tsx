@@ -40,6 +40,7 @@ function renderSection({ compact = false } = {}) {
       onCreatePalette={vi.fn()}
       onFaviconColorChange={vi.fn()}
       onThemePreferenceChange={vi.fn()}
+      onTypographyChange={vi.fn()}
       themePreference="system"
     />,
     compact ? { wrapper: CompactViewport } : undefined,

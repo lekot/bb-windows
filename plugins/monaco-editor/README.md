@@ -14,6 +14,11 @@ panel's file search, and `bb thread open`.
 - **Find in file** with <kbd>⌘F</kbd>, plus Monaco's usual editing: multiple
   cursors, block selection, bracket matching, code folding.
 - **Syntax highlighting** for ~86 common file types.
+- **Markdown preview.** `.md` and `.markdown` files open as a rendered preview
+  (bb's own Markdown renderer) by default; the file-bar toggle switches between
+  Preview and Source. The preview always shows the editor's current text,
+  including unsaved edits, and switching views never saves or reloads the
+  file. `.mdx` stays in the plain editor.
 - **File tree.** Toggle it from the file bar to browse the project, filter by
   path, expand and collapse directories, and jump to another file. It opens
   with the current file revealed. Right-click any row to copy its absolute

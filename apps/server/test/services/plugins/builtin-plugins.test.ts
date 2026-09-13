@@ -231,8 +231,6 @@ describe("builtin plugin reconciliation", () => {
       "github",
       "docs",
       "memory",
-      "tasks",
-      "theme-preview",
     ]);
     for (const name of optionalNames) {
       expect(BUILTIN_PLUGINS.map((plugin) => plugin.name)).not.toContain(name);
@@ -248,12 +246,15 @@ describe("builtin plugin reconciliation", () => {
       ["automations", "Repeat"],
       ["concurrency-limit", "Limitation"],
       ["connect", "Smartphone"],
+      ["git-graph", "GitBranch"],
       ["custom-instructions", "EditFile"],
-      ["plugin-api-tester", "Beaker"],
       ["inline-vis", "AppWindow"],
       ["keep-awake", "Coffee"],
       ["monaco-editor", "Code"],
       ["pdf-preview", "FileText"],
+      ["pc-control", "Laptop"],
+      ["workspace-explorer", "FolderOpen"],
+      ["windows-screen", "AppWindow"],
       ["environment-project-checkout", "Laptop"],
       ["environment-personal-workspace", "Folder"],
       ["provider-acp", "./icons/acp.svg"],
@@ -279,6 +280,33 @@ describe("builtin plugin reconciliation", () => {
       expect(manifest.branding.icon, builtin.name).toBe(
         expectedIcons.get(builtin.name),
       );
+    }
+  });
+
+  it("keeps the Windows distribution selection separate from excluded plugins", () => {
+    const bundledNames = [...BUILTIN_PLUGINS, ...OFFICIAL_PLUGINS].map(
+      (plugin) => plugin.name,
+    );
+    for (const name of [
+      "tasks",
+      "taskboard",
+      "usage-tracker",
+      "theme-preview",
+      "project-preflight",
+      "plugin-api-tester",
+    ]) {
+      expect(bundledNames).not.toContain(name);
+    }
+    for (const name of [
+      "pc-control",
+      "git-graph",
+      "workspace-explorer",
+      "windows-screen",
+      "monaco-editor",
+    ]) {
+      expect(
+        BUILTIN_PLUGINS.find((plugin) => plugin.name === name),
+      ).toMatchObject({ autoInstall: true, defaultEnabled: true });
     }
   });
 
@@ -485,20 +513,20 @@ describe("builtin plugin reconciliation", () => {
     expect(loadCount()).toBe(0);
   });
 
-  it("ships Plugin API Tester disabled on a fresh database", () => {
+  it("excludes Plugin API Tester from a fresh database", () => {
     const pluginApiTester = BUILTIN_PLUGINS.find(
       (builtin) => builtin.name === "plugin-api-tester",
     );
 
-    expect(pluginApiTester?.defaultEnabled).toBe(false);
+    expect(pluginApiTester).toBeUndefined();
   });
 
-  it("ships the File Editor (monaco-editor) disabled on a fresh database", () => {
+  it("ships the File Editor (monaco-editor) enabled on a fresh database", () => {
     const monacoEditor = BUILTIN_PLUGINS.find(
       (builtin) => builtin.name === "monaco-editor",
     );
 
-    expect(monacoEditor?.defaultEnabled).toBe(false);
+    expect(monacoEditor?.defaultEnabled).toBe(true);
   });
 
   it("ships the Plugin Guide disabled on a fresh database", async () => {

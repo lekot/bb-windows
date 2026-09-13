@@ -857,6 +857,7 @@ describe("public thread fork route", () => {
         environmentId: environment.id,
         model: "acp-default",
         providerThreadId: "provider-acp-source",
+        reasoningLevel: "high",
         threadId: sourceThread.id,
       });
       seedTurnStarted(harness.deps, {
@@ -871,7 +872,7 @@ describe("public thread fork route", () => {
         sourceThreadId: sourceThread.id,
       });
 
-      expect(response.status).toBe(201);
+      expect(response.status, await response.clone().text()).toBe(201);
       const fork = threadResponseSchema.parse(await readJson(response));
       const start = await waitForQueuedCommand(
         harness,
@@ -934,6 +935,7 @@ function seedHistoryUserRequest(
   args: {
     environmentId: string;
     requestId: ClientTurnRequestId;
+    reasoningLevel?: string;
     sequence: number;
     text: string;
     threadId: string;
@@ -953,7 +955,7 @@ function seedHistoryUserRequest(
       execution: {
         model: "gpt-5",
         serviceTier: "default",
-        reasoningLevel: "medium",
+        reasoningLevel: args.reasoningLevel ?? "medium",
         permissionMode: "full",
         source: "client/turn/requested",
       },
@@ -983,12 +985,14 @@ function seedConversationForkSource(
     environmentId: environment.id,
     projectId: project.id,
     ...(args.providerId === undefined ? {} : { providerId: args.providerId }),
+    ...(args.providerId === "acp-opencode" ? { reasoningLevel: "high" } : {}),
   });
   seedThreadRuntimeState(harness.deps, {
     environmentId: environment.id,
     inputText: "Reply only with ok.",
     permissionMode: "full",
     providerThreadId: HISTORY_PROVIDER_THREAD_ID,
+    ...(args.providerId === "acp-opencode" ? { reasoningLevel: "high" } : {}),
     threadId: sourceThread.id,
   });
   const base = {
@@ -1024,6 +1028,7 @@ function seedConversationForkSource(
   seedHistoryUserRequest(harness, {
     ...base,
     requestId: secondRequestId,
+    ...(args.providerId === "acp-opencode" ? { reasoningLevel: "high" } : {}),
     sequence: 6,
     text: "Reply only with the word second.",
   });
@@ -1076,6 +1081,7 @@ function seedConversationForkSource(
   seedHistoryUserRequest(harness, {
     ...base,
     requestId: thirdRequestId,
+    ...(args.providerId === "acp-opencode" ? { reasoningLevel: "high" } : {}),
     sequence: 12,
     text: "Reply only with the word third.",
   });
@@ -1303,7 +1309,7 @@ describe("fork branch point and inherited history", () => {
         sourceThreadId: sourceThread.id,
       });
 
-      expect(response.status).toBe(201);
+      expect(response.status, await response.clone().text()).toBe(201);
       const fork = threadResponseSchema.parse(await readJson(response));
       const start = await waitForForkStart(harness, fork.id);
       expect(start.fork).toEqual({
@@ -1339,7 +1345,7 @@ describe("fork branch point and inherited history", () => {
         sourceThreadId: sourceThread.id,
         sourceSeqEnd: 10,
       });
-      expect(tip.status).toBe(201);
+      expect(tip.status, await tip.clone().text()).toBe(201);
       const fork = threadResponseSchema.parse(await readJson(tip));
       const start = await waitForForkStart(harness, fork.id);
       expect(start.fork).toEqual({

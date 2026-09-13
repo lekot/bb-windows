@@ -32,6 +32,7 @@ export interface GitProcessOptions {
 }
 
 export interface RunGitOptions extends GitProcessOptions {
+  stdin?: string;
   cwd: string;
   timeoutMs?: number;
   allowFailure?: boolean;
@@ -285,10 +286,11 @@ export async function runGit(
       maxBuffer: options.maxBufferBytes ?? DEFAULT_BUFFER_BYTES,
       signal: options.signal,
       timeout: options.timeoutMs,
+      windowsHide: true,
     } as const;
     const stderrListener = options.onStderr;
     const result =
-      stderrListener === undefined
+      stderrListener === undefined && options.stdin === undefined
         ? await execFileAsync("git", args, processOptions)
         : await new Promise<{ stdout: string; stderr: string }>(
             (resolve, reject) => {
@@ -305,7 +307,12 @@ export async function runGit(
                 },
               );
               child.stderr?.setEncoding("utf8");
-              child.stderr?.on("data", stderrListener);
+              if (stderrListener !== undefined) {
+                child.stderr?.on("data", stderrListener);
+              }
+              if (options.stdin !== undefined) {
+                child.stdin?.end(options.stdin);
+              }
             },
           );
     return {

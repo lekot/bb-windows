@@ -33,6 +33,10 @@ import {
   REALTIME_THREAD_CHANGE_REGISTRY,
   partitionThreadChangesByFlushPriority,
 } from "./cache-owners/realtime-cache-registry";
+import {
+  updateCachedThreadListPendingInteractionState,
+  updateCachedThreadListStatusState,
+} from "./cache-owners/query-cache";
 
 interface ThreadInvalidationDebounce {
   debounceMs: number;
@@ -305,6 +309,29 @@ function recordThreadChange(
   }
 }
 
+function patchHiddenThreadAttentionState(
+  queryClient: QueryClient,
+  message: ChangedMessage,
+): void {
+  if (message.entity !== "thread" || !message.id || !message.metadata) {
+    return;
+  }
+  if (message.metadata.hasPendingInteraction !== undefined) {
+    updateCachedThreadListPendingInteractionState(
+      queryClient,
+      message.id,
+      message.metadata.hasPendingInteraction,
+    );
+  }
+  if (message.metadata.statusChange) {
+    updateCachedThreadListStatusState(
+      queryClient,
+      message.id,
+      message.metadata.statusChange,
+    );
+  }
+}
+
 function invalidateRealtimeEnvironmentChange({
   changeKinds,
   environmentId,
@@ -488,6 +515,7 @@ export function createRealtimeCacheEffects({
       switch (message.entity) {
         case "thread": {
           if (!documentVisible) {
+            patchHiddenThreadAttentionState(queryClient, message);
             recordThreadChange(threadChangeState, message);
             hasDeferredThreadChanges = true;
             break;

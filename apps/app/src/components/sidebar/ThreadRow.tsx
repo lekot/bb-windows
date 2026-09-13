@@ -90,6 +90,7 @@ import {
 } from "@/components/thread/ThreadTitleMentions";
 import { pluginIconName } from "@/components/plugin/PluginIcon";
 import { usePluginThreadRowStatus } from "@/lib/plugin-thread-row-status";
+import { ThreadProviderBadge } from "./ThreadProviderBadge";
 
 const SIDEBAR_TITLE_DOUBLE_CLICK_MS = 400;
 
@@ -653,6 +654,13 @@ function ThreadRowComponent({
   );
 
   const rowLinkRef = useRef<HTMLAnchorElement>(null);
+  const handleProviderBadgeClick = useCallback<
+    MouseEventHandler<HTMLSpanElement>
+  >((event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    rowLinkRef.current?.click();
+  }, []);
   const rowContent = (
     <>
       <NavLink
@@ -691,6 +699,10 @@ function ThreadRowComponent({
           !shortcut && SIDEBAR_HOVER_ACTIONS_INSET_CLASS,
         )}
       >
+        <ThreadProviderBadge
+          providerId={thread.providerId}
+          onClick={handleProviderBadgeClick}
+        />
         {isEditing ? (
           <span className="relative z-10 min-w-0 flex-1 overflow-visible">
             {editor}

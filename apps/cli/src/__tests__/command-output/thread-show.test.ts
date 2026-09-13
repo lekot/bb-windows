@@ -103,6 +103,41 @@ describe("bb thread show command output", () => {
     expect(lines.some((line) => line.includes("Pinned:"))).toBe(true);
   });
 
+  it("bb thread show --json includes the provider session id", async () => {
+    const thread = {
+      ...fixtures.makeThread({
+        id: "thread-session-1",
+        projectId: "proj-1",
+        providerId: "codex",
+        status: "idle",
+      }),
+      runtime: { displayStatus: "idle", hostReconnectGraceExpiresAt: null },
+      activeBackgroundAgentCount: 0,
+      canSpawnChild: false,
+      queuedMessageCount: 0,
+      providerSessionId: "0199aa11-bb22-cc33-dd44-ee55ff667788",
+    } satisfies serverContract.ThreadResponse;
+    const get = vi.fn(async () => thread);
+    const timelineGet = fixtures.makeEmptyTimelineGetMock();
+    stubServerApi({
+      "v1.threads.:id.$get": get,
+      "v1.threads.:id.timeline.$get": timelineGet,
+    });
+
+    await runCommand(
+      ["thread", "show", "thread-session-1", "--json"],
+      register,
+    );
+
+    const lines = collectLogLines(vi.mocked(console.log));
+    const payload = JSON.parse(lines.join("\n")) as {
+      providerSessionId: string | null;
+    };
+    expect(payload.providerSessionId).toBe(
+      "0199aa11-bb22-cc33-dd44-ee55ff667788",
+    );
+  });
+
   it("bb thread show --self resolves from BB_THREAD_ID", async () => {
     vi.stubEnv("BB_THREAD_ID", "thread-show-self");
     const thread: domain.Thread = fixtures.makeThread({
@@ -459,6 +494,7 @@ describe("bb thread show command output", () => {
         },
       },
       pendingTodos: null,
+      providerSessionId: null,
     });
   });
 
@@ -489,6 +525,7 @@ describe("bb thread show command output", () => {
       thread,
       environment: null,
       pendingTodos: null,
+      providerSessionId: null,
     });
   });
 });

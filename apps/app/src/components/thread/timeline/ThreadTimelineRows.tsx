@@ -913,6 +913,7 @@ const ConversationRowContent = memo(function ConversationRowContent({
     const originKind = isForkSeedAnchorRow(row) ? threadOriginKind : null;
     const canEditMessage =
       onEditMessage !== undefined &&
+      row.sourceSeqStart > 0 &&
       row.initiator === "user" &&
       !row.turnRequest.isGrouped &&
       row.turnRequest.kind === "message" &&
@@ -945,6 +946,7 @@ const ConversationRowContent = memo(function ConversationRowContent({
       <ConversationMessageContent
         attachments={row.attachments}
         originKind={originKind}
+        threadId={row.threadId}
         initiator={row.initiator}
         mentions={row.mentions}
         mobileActionDisplay={mobileActionDisplay}
@@ -968,14 +970,13 @@ const ConversationRowContent = memo(function ConversationRowContent({
         systemMessageSubject={row.systemMessageSubject}
         pluginActions={rowPluginActions}
         text={row.text}
-        threadId={row.threadId}
         turnRequest={row.turnRequest}
         workspaceRootPath={workspaceRootPath}
       />
     );
   }
   const onFork =
-    onForkMessage === undefined
+    onForkMessage === undefined || row.sourceSeqEnd === 0
       ? undefined
       : () => onForkMessage({ sourceSeqEnd: row.sourceSeqEnd });
   const onSendToMain =

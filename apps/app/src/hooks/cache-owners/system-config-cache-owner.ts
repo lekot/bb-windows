@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import {
   applyAppKeybindingOverrides,
+  type AppThemeSelection,
   type AppKeybindingOverrides,
 } from "@bb/domain";
 import type { SystemConfigResponse } from "@bb/server-contract";
@@ -8,6 +9,43 @@ import { systemConfigQueryKey } from "../queries/query-keys";
 
 interface KeyboardSettingsCacheTransaction {
   previous: SystemConfigResponse | undefined;
+}
+
+export interface AppearanceCacheTransaction {
+  previous: SystemConfigResponse | undefined;
+}
+
+export async function beginAppearanceCacheTransaction({
+  queryClient,
+  selection,
+}: {
+  queryClient: QueryClient;
+  selection: AppThemeSelection;
+}): Promise<AppearanceCacheTransaction> {
+  const queryKey = systemConfigQueryKey();
+  await queryClient.cancelQueries({ queryKey });
+  const previous = queryClient.getQueryData<SystemConfigResponse>(queryKey);
+  if (previous !== undefined) {
+    queryClient.setQueryData<SystemConfigResponse>(queryKey, {
+      ...previous,
+      appearance: {
+        ...previous.appearance,
+        ...selection,
+      },
+    });
+  }
+  return { previous };
+}
+
+export function rollbackAppearanceCacheTransaction({
+  queryClient,
+  transaction,
+}: {
+  queryClient: QueryClient;
+  transaction: AppearanceCacheTransaction | undefined;
+}): void {
+  if (transaction?.previous === undefined) return;
+  queryClient.setQueryData(systemConfigQueryKey(), transaction.previous);
 }
 
 export function markSystemConfigStale(queryClient: QueryClient): void {

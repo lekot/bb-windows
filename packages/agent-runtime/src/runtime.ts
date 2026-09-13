@@ -54,6 +54,9 @@ import { RuntimeTurnState } from "./runtime-turn-state.js";
 import type {
   AgentRuntimeContributedEnvEntry,
   AgentRuntime,
+  NativeSessionBaselineExecution,
+  NativeSessionOverrides,
+  NativeSessionResumeIntent,
   AgentRuntimeProviderRecoveryHint,
   AgentRuntimeBridgeLaunch,
   AgentRuntimeExecutionOptions,
@@ -184,6 +187,7 @@ const PREPARED_THREAD_REWIND_TTL_MS = 5 * 60_000;
 const PREPARED_THREAD_REWIND_RETRY_MS = 30_000;
 
 interface ThreadRuntimeConfig {
+  nativeSession?: NativeSessionResumeIntent;
   bridgeLaunch: AgentRuntimeBridgeLaunch;
   contributedEnv: readonly AgentRuntimeContributedEnvEntry[];
   dynamicTools?: DynamicTool[];
@@ -673,6 +677,19 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
     );
   }
 
+  function nativeSessionOverrides(args: {
+    baseline: NativeSessionBaselineExecution;
+    current: AgentRuntimeExecutionOptions;
+  }): NativeSessionOverrides {
+    return {
+      model: args.current.model !== args.baseline.model,
+      permissions: args.current.permissionMode !== args.baseline.permissionMode,
+      reasoningLevel:
+        args.current.reasoningLevel !== args.baseline.reasoningLevel,
+      serviceTier: args.current.serviceTier !== args.baseline.serviceTier,
+    };
+  }
+
   function setThreadRuntimeConfig(
     threadId: string,
     config: ThreadRuntimeConfig,
@@ -1041,6 +1058,9 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
       providerId: currentConfig.providerId,
       contributedEnv: currentConfig.contributedEnv,
       options: args.options,
+      ...(currentConfig.nativeSession === undefined
+        ? {}
+        : { nativeSession: currentConfig.nativeSession }),
       ...(resumeInstructions !== undefined
         ? { instructions: resumeInstructions }
         : {}),
@@ -1491,6 +1511,19 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
             threadId,
           });
           setThreadRuntimeConfig(threadId, {
+            ...(fork?.resumeOriginal === true
+              ? {
+                  nativeSession: {
+                    resumeOriginal: true as const,
+                    baselineExecution: {
+                      model: execOpts.model,
+                      permissionMode: execOpts.permissionMode,
+                      reasoningLevel: execOpts.reasoningLevel,
+                      serviceTier: execOpts.serviceTier,
+                    },
+                  },
+                }
+              : {}),
             bridgeLaunch,
             contributedEnv,
             dynamicTools,
@@ -1511,7 +1544,22 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
             execOpts,
             instructions,
           });
-          const adapterCommand: AdapterCommand = fork
+          if (fork?.resumeOriginal && fork.sourceProviderCheckpointId !== undefined) {
+            throw new Error("Original session resume requires no checkpoint");
+          }
+          const adapterCommand: AdapterCommand = fork?.resumeOriginal
+            ? {
+                type: "thread/resume",
+                threadId,
+                cwd: options.workspacePath,
+                providerThreadId: fork.sourceProviderThreadId,
+                resumeOriginal: true,
+                options: providerExecutionContext,
+                dynamicTools,
+                disallowedTools,
+                instructionMode,
+              }
+            : fork
             ? {
                 type: "thread/fork",
                 threadId,
@@ -1560,6 +1608,9 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
                 : {}),
             });
             updateSessionRestoreCapability(threadId, result.sessionRestorable);
+            if (fork?.resumeOriginal && result.providerThreadId !== fork.sourceProviderThreadId) {
+              throw new Error("Provider changed the original session identity; refusing to send input");
+            }
             recordProviderThreadIdentity(
               proc,
               threadId,
@@ -1780,6 +1831,7 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
       dynamicTools,
       disallowedTools,
       instructionMode = "append",
+      nativeSession,
     }) {
       return runThreadOperation({
         threadId,
@@ -1811,6 +1863,7 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
             threadId,
           });
           setThreadRuntimeConfig(threadId, {
+            ...(nativeSession === undefined ? {} : { nativeSession }),
             bridgeLaunch,
             contributedEnv,
             dynamicTools,
@@ -1836,6 +1889,15 @@ export function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {
             cwd: options.workspacePath,
             providerThreadId:
               providerThreadId ?? requireProviderThreadId(threadId),
+            ...(nativeSession === undefined
+              ? {}
+              : {
+                  resumeOriginal: true as const,
+                  nativeOverrides: nativeSessionOverrides({
+                    baseline: nativeSession.baselineExecution,
+                    current: execOpts,
+                  }),
+                }),
             options: toProviderExecutionContext({
               envVars: resolvedEnvironment.envVars,
               execOpts,

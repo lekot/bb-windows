@@ -146,7 +146,7 @@ export function recordFromOutcome(
 }
 
 export function formatCookieCount(count: number): string {
-  return `${count.toLocaleString()} ${count === 1 ? "cookie" : "cookies"}`;
+  return `${count.toLocaleString("en-US")} ${count === 1 ? "cookie" : "cookies"}`;
 }
 
 export function formatSkippedDomains(domains: readonly string[]): string {
@@ -255,7 +255,7 @@ export function presentSourceRow(
         `${record.profileName} · ${formatCookieCount(record.imported)} imported`,
         ...(record.skipped > 0
           ? [
-              `${record.skipped.toLocaleString()} skipped${
+              `${record.skipped.toLocaleString("en-US")} skipped${
                 record.skippedDomains.length > 0
                   ? ` (${formatSkippedDomains(record.skippedDomains)})`
                   : ""

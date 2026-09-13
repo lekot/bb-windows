@@ -11,6 +11,7 @@ const EXECUTION_CONTEXT = {
   reasoningLevel: "high",
   claudeCodePermissionMode: "plan",
   workflowsEnabled: true,
+  idleQueryReleaseEnabled: true,
   chromeEnabled: true,
   memoryEnabled: false,
   providerSubagentsEnabled: false,
@@ -26,6 +27,7 @@ function toCanonicalWireOptions(options: typeof EXECUTION_CONTEXT) {
   const {
     claudeCodePermissionMode,
     workflowsEnabled,
+    idleQueryReleaseEnabled,
     chromeEnabled,
     memoryEnabled,
     providerSubagentsEnabled,
@@ -36,6 +38,7 @@ function toCanonicalWireOptions(options: typeof EXECUTION_CONTEXT) {
     providerOptions: {
       claudeCodePermissionMode,
       workflowsEnabled,
+      idleQueryReleaseEnabled,
       chromeEnabled,
       memoryEnabled,
       providerSubagentsEnabled,
@@ -82,6 +85,7 @@ describe("buildClaudeSessionParams", () => {
       cwd: "/tmp/worktree",
       permissionMode: "plan",
       workflowsEnabled: true,
+      idleQueryReleaseEnabled: true,
       chromeEnabled: true,
       memoryEnabled: false,
       providerSubagentsEnabled: false,
@@ -125,6 +129,7 @@ describe("buildClaudeSessionParams", () => {
     });
     expect(params).toMatchObject({
       workflowsEnabled: false,
+      idleQueryReleaseEnabled: false,
       chromeEnabled: false,
       permissionMode: "bypassPermissions",
       approvedPlanPermissionMode: "bypassPermissions",
@@ -359,6 +364,7 @@ describe("buildClaudeTurnParams", () => {
       },
     });
     expect(params.workflowsEnabled).toBeUndefined();
+    expect(params.idleQueryReleaseEnabled).toBeUndefined();
     expect(params.chromeEnabled).toBeUndefined();
     expect(params.memoryEnabled).toBeUndefined();
     expect(params.providerSubagentsEnabled).toBeUndefined();

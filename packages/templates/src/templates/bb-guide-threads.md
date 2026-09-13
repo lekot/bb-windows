@@ -7,9 +7,15 @@ editingNotes: Keep flags accurate against the CLI implementation. Run the json-f
 ---
 Thread commands
 
+Windows fork optional plugin: `bb windows-screen capture <thread-id> [monitor-index] --json` captures that session's Windows host desktop, not the browser device. Requires installed Windows Screen. Returns image metadata and base64 JPEG; monitor 0 is primary. All users with bb access can request and view captures.
+
 Every command supports --json for machine-readable output.
 
 Spawning:
+
+  Experimental Windows fork: --provider claude-code --claude-source-session <uuid> copies a native Claude session on the selected host. Use the original project directory. The source remains unchanged; old messages are available to Claude but are not imported into the bb timeline. SDK: threads.spawn({ claudeSourceSessionId, providerId: "claude-code", ... }). Cannot combine with a bb fork source.
+  To continue the original instead: --provider claude-code --claude-resume-session <uuid>. SDK: threads.spawn({ claudeResumeSessionId, providerId: "claude-code", ... }). Close other clients first, select the original host/user/directory, and stop this bb chat before resuming in VS Code. New turns append to the original Claude history; old messages are not imported into bb. Do not create multiple bb chats for one native session. Cannot combine with copy/fork options.
+  The same original-session resume works for other providers with native transcripts: --provider codex --resume-native-session <uuid> or --provider acp-zcode --resume-native-session <sess_id>. SDK: threads.spawn({ nativeResumeSessionId, providerId, ... }). bb does not override the original model, permissions, or instructions on resume; a later explicit model/reasoning choice in bb applies to the next message. Cannot combine with copy/fork options or --claude-resume-session.
 
   bb thread spawn --project <id> --prompt "..." [options]
 
@@ -146,6 +152,12 @@ Listing:
   bb thread search <query> [--limit <1-50>]
                                              Search threads and messages
   bb thread history <id>                   List prompt history
+  bb thread native-history [id]            Show native history (Claude, Codex, ZCode), observed permissions, and latest context usage
+  bb thread native-quota [id]              Show the provider account's read-only native usage quota (ZCode five-hour window)
+  bb thread native-image [id] --message ID --attachment ID [--json]
+                                          Read a native ZCode image; --json includes MIME type and bounded base64 data
+  bb thread desktop-sync [id]              Check native session sync status between bb and ZCode Desktop (read-only)
+  bb thread desktop-register [id]          Register the native ZCode session in ZCode Desktop (preflight; --apply writes after a verified backup)
 
   bb thread count                          Count threads without listing them
     --status <status>                      Count threads in this status: pending, idle, starting, active, stopping, error
@@ -173,6 +185,9 @@ Inspecting:
   bb thread context [id]                   Show recorded context usage and available breakdown (--self, --json)
   bb thread show [id]                      Show thread details and pull request status
     --self                                 Target current thread
+    --json                                 Machine-readable output; providerSessionId
+                                           is the provider's session id (null while
+                                           the provider session is not created)
     --work-status                          Include git working-tree status
     --git-diff                             Include git diff
     --diff-target <type>                   Diff scope: uncommitted, branch_committed, all, commit
@@ -193,6 +208,43 @@ Inspecting:
   on stderr when more events exist beyond the printed page. Human-format --all
   walks a consistent history snapshot and joins paginated group contents.
   Appends stay outside that walk; rerun the command if a history edit invalidates it.
+
+  bb thread native-history [id]            Show a read-only native history page (Claude, Codex, ZCode)
+    --before <cursor>                      Read the older page before this opaque cursor
+    --limit <1-100>                        Messages per page (default: 20)
+    --self                                 Target the current thread
+    --json                                 Print machine-readable JSON output
+
+  bb thread native-quota [id]              Show the provider account's read-only native usage quota
+  bb thread native-image [id] --message ID --attachment ID [--json]
+                                          Read an image linked to an exact native message, without loading every image in history
+    --self                                 Target the current thread
+    --json                                 Print machine-readable JSON output
+
+  This reads the latest 20 user and assistant messages by default (up to 100)
+  from the matching native Claude session on the attached host. Use the returned
+  nextCursor with --before for older pages. The opaque cursor remains valid
+  after append-only changes, but is rejected if the transcript is replaced or
+  truncated. This does not add to or alter bb's transcript. A missing native
+  transcript is an error, not a sync.
+
+  bb thread desktop-sync [id]              Read-only check of native session sync between bb and ZCode Desktop
+    --self                                 Target the current thread
+    --json                                 Print machine-readable JSON output
+
+  bb thread desktop-register [id]          Register the native ZCode session in the ZCode Desktop task index
+    --apply                                Write the row after a verified backup; without it the command only preflights
+    --self                                 Target the current thread
+    --json                                 Print machine-readable JSON output
+
+  Desktop registration is bb's explicit guarded SQLite path for making an
+  existing native ZCode session visible in ZCode Desktop; no official vendor
+  import API exists. The default run is a read-only preflight: it verifies the
+  task index integrity, checks for an existing row, confirms the native session
+  belongs to this thread's workspace, and prints what would be written. --apply
+  creates a verified online backup first, then writes one row inside a
+  transaction that re-checks duplicates and schema compatibility. Re-running is
+  idempotent and reports already_registered without another backup.
 
   bb thread output [id]                    Get the final output of a thread
     --self                                 Target current thread
@@ -275,6 +327,7 @@ Messaging:
 Ownership:
 
   bb thread update [id]                    Update thread metadata
+    --adopt-native-session <id>            Record current native-session retention for an idle legacy thread; cannot combine with model/reasoning changes
     --self                                 Target current thread
     --title <title>                        Set title
     --parent-thread <id>                   Assign to a parent thread

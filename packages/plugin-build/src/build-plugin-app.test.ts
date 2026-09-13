@@ -408,7 +408,9 @@ describe("plugin app runtime shim", () => {
     expect(css).toContain(".leading-tight{");
     expect(css).not.toContain(".tracking-tighter{");
     expect(css).not.toContain(".tracking-normal{");
-    expect(css).toMatch(/:root,:host\{[^}]*--tracking-widest:/);
+    expect(css).toMatch(
+      /:where\(\[data-bb-plugin=scan-fixture\],\[data-bb-plugin-root\]:not\(\[data-bb-plugin\]\)\)\{[^}]*--tracking-widest:/,
+    );
     expect(css).not.toContain("--color-background:");
   });
 

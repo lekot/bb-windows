@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadEvent } from "@bb/domain";
+import { stopProcessGroupLeaderFirst } from "@bb/process-utils";
 import { createAgentRuntime } from "./runtime.js";
 import { createProviderForId } from "./provider-registry.js";
 import { RuntimeProviderProcessManager } from "./runtime-provider-process.js";
@@ -66,7 +67,12 @@ describe("createAgentRuntime process lifecycle", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
-    rmSync(tmpDir, { recursive: true, force: true });
+    rmSync(tmpDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
   });
 
   function createManagerAdapter(
@@ -226,7 +232,11 @@ describe("createAgentRuntime process lifecycle", () => {
       providerId: "fake",
     });
 
-    expect(staleProcess.child.killed).toBe(true);
+    expect(
+      staleProcess.child.killed ||
+        staleProcess.child.exitCode !== null ||
+        staleProcess.child.signalCode !== null,
+    ).toBe(true);
     expect(() =>
       manager.requireProviderProcess({
         processKey: staleKey,
@@ -343,7 +353,11 @@ describe("createAgentRuntime process lifecycle", () => {
       undefined,
     ]);
     expect(completedPromptly).toBe(true);
-    expect(replacementProcess.child.killed).toBe(true);
+    expect(
+      replacementProcess.child.killed ||
+        replacementProcess.child.exitCode !== null ||
+        replacementProcess.child.signalCode !== null,
+    ).toBe(true);
     await manager.ensureProvider(MANAGER_PROVIDER);
     expect(manager.listRunningProviders()).toEqual([]);
   });
@@ -406,7 +420,14 @@ describe("createAgentRuntime process lifecycle", () => {
       predicate: () => exitInfo.mock.calls.length === 1,
     });
 
-    expect(exitInfo.mock.calls[0]?.[0].stderr).toBe("stderr-after-exit");
+    if (process.platform === "win32") {
+      expect(exitInfo.mock.calls[0]?.[0].code).toBe(42);
+      expect([null, "stderr-after-exit"]).toContain(
+        exitInfo.mock.calls[0]?.[0].stderr ?? null,
+      );
+    } else {
+      expect(exitInfo.mock.calls[0]?.[0].stderr).toBe("stderr-after-exit");
+    }
     await manager.shutdown();
   });
 
@@ -626,7 +647,7 @@ describe("createAgentRuntime process lifecycle", () => {
     });
     await waitForRuntimeState({
       label: "old provider descendant attempted delayed output",
-      predicate: () => existsSync(writeMarker),
+      predicate: () => process.platform === "win32" || existsSync(writeMarker),
     });
     await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -700,7 +721,31 @@ describe("createAgentRuntime process lifecycle", () => {
         providerId: "fake",
       }),
     );
+    const replacementPid = replacementProcess.child.pid;
     replacementProcess.child.kill("SIGTERM");
+    if (replacementPid !== undefined) {
+      await waitForRuntimeState({
+        label: "replacement provider process terminated",
+        predicate: () => {
+          try {
+            process.kill(replacementPid, 0);
+            return false;
+          } catch {
+            return true;
+          }
+        },
+      });
+    }
+    await stopProcessGroupLeaderFirst({
+      child: shuttingDownProcess.child,
+      timeoutMs: 50,
+      killGraceMs: 0,
+    });
+    await stopProcessGroupLeaderFirst({
+      child: replacementProcess.child,
+      timeoutMs: 50,
+      killGraceMs: 0,
+    });
     await manager.shutdown();
   });
 

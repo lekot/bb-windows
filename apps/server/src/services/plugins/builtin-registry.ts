@@ -49,6 +49,11 @@ export const BUILTIN_PLUGINS = [
     defaultEnabled: true,
   },
   {
+    name: "git-graph",
+    pluginId: "git-graph",
+    defaultEnabled: true,
+  },
+  {
     name: "environment-project-checkout",
     pluginId: "environment-project-checkout",
     defaultEnabled: true,
@@ -69,11 +74,6 @@ export const BUILTIN_PLUGINS = [
     defaultEnabled: true,
   },
   {
-    name: "plugin-api-tester",
-    pluginId: "plugin-api-tester",
-    defaultEnabled: false,
-  },
-  {
     name: "inline-vis",
     pluginId: "inline-vis",
     defaultEnabled: true,
@@ -81,11 +81,26 @@ export const BUILTIN_PLUGINS = [
   {
     name: "monaco-editor",
     pluginId: "monaco-editor",
-    defaultEnabled: false,
+    defaultEnabled: true,
   },
   {
     name: "pdf-preview",
     pluginId: "pdf-preview",
+    defaultEnabled: true,
+  },
+  {
+    name: "pc-control",
+    pluginId: "pc-control",
+    defaultEnabled: true,
+  },
+  {
+    name: "workspace-explorer",
+    pluginId: "workspace-explorer",
+    defaultEnabled: true,
+  },
+  {
+    name: "windows-screen",
+    pluginId: "windows-screen",
     defaultEnabled: true,
   },
   {
@@ -187,16 +202,6 @@ export const OFFICIAL_PLUGINS = [
   {
     name: "memory",
     pluginId: "memory",
-    defaultEnabled: true,
-  },
-  {
-    name: "tasks",
-    pluginId: "tasks",
-    defaultEnabled: true,
-  },
-  {
-    name: "theme-preview",
-    pluginId: "theme-preview",
     defaultEnabled: true,
   },
 ].map((plugin): BundledPluginDefinition => ({

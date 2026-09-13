@@ -54,6 +54,7 @@ import { ThreadPromptModeCard } from "@/components/promptbox/banner/ThreadPrompt
 import { ThreadWorkflowCard } from "@/components/promptbox/banner/ThreadWorkflowCard";
 import { ThreadBackgroundCommandsCard } from "@/components/promptbox/banner/ThreadBackgroundCommandsCard";
 import { ThreadModelFallbackCard } from "@/components/promptbox/banner/ThreadModelFallbackCard";
+import { NativePermissionMismatchCard } from "@/components/promptbox/banner/NativePermissionMismatchCard";
 import { InlineMessageEditorFrame } from "@/components/promptbox/InlineMessageEditorFrame";
 import type {
   WorkspaceChangedFileSelection,
@@ -85,6 +86,7 @@ import {
   useCreateThreadQueuedMessage,
   useCancelThreadPlan,
   useClearThreadGoal,
+  useCompactThread,
   useStopThread,
 } from "@/hooks/mutations/thread-runtime-mutations";
 import { useUnarchiveThread } from "@/hooks/mutations/thread-state-mutations";
@@ -94,6 +96,11 @@ import {
   useThreadPromptHistory,
 } from "@/hooks/queries/thread-queries";
 import { useThreadDefaultExecutionOptions } from "@/hooks/queries/thread-default-execution-options-query";
+import { useNativeContextWindow } from "@/hooks/queries/native-context-window";
+import { useNativePermissionMismatch } from "@/hooks/queries/native-permission-mismatch";
+import { useNativeQuota } from "@/hooks/queries/native-quota-query";
+import { useSystemProviderInfo } from "@/hooks/queries/system-queries";
+import { NativeQuotaIndicator } from "@/components/promptbox/NativeQuotaIndicator";
 import {
   getMutationErrorMessage,
   showMutationErrorToast,
@@ -102,7 +109,10 @@ import { promptHistoryEntriesToDrafts } from "@/lib/prompt-history";
 import { usePromptHistoryEnabled } from "@/hooks/usePromptHistoryEnabled";
 import { getProjectComposeRoutePath } from "@/lib/route-paths";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
-import { buildThreadHandoffLocationState } from "@bb/client-core";
+import {
+  buildThreadHandoffLocationState,
+  isRunningThreadRuntimeDisplayStatus,
+} from "@bb/client-core";
 import {
   emptyPromptDraftState,
   promptDraftToInput,
@@ -454,6 +464,7 @@ export function ThreadDetailPromptArea({
   );
   const createQueuedMessage = useCreateThreadQueuedMessage();
   const stopThread = useStopThread();
+  const compactThread = useCompactThread();
   const cancelThreadPlan = useCancelThreadPlan();
   const clearThreadGoal = useClearThreadGoal();
   const unarchiveThread = useUnarchiveThread();
@@ -672,6 +683,30 @@ export function ThreadDetailPromptArea({
     resolveMentionLink,
   });
   const runtimeDisplayStatus = thread.runtime.displayStatus;
+  const isThreadRunning =
+    isRunningThreadRuntimeDisplayStatus(runtimeDisplayStatus);
+  const nativeHistoryProvider = useSystemProviderInfo({
+    providerId: thread.providerId,
+  });
+  const nativeHistoryEnabled =
+    nativeHistoryProvider?.capabilities.nativeHistoryReader !== undefined;
+  const nativeQuota = useNativeQuota(
+    thread.id,
+    nativeHistoryProvider?.capabilities.nativeHistoryReader === "zcode-sqlite",
+  );
+  const nativeContext = useNativeContextWindow(
+    thread.id,
+    nativeHistoryEnabled,
+    contextWindowUsage,
+    effectiveSelectedModel || null,
+    isThreadRunning,
+    nativeHistoryProvider?.displayName ?? null,
+  );
+  const nativePermissionMismatch = useNativePermissionMismatch(
+    thread.id,
+    nativeHistoryEnabled,
+    permissionMode,
+  );
   const shouldSteerWhenReady =
     runtimeDisplayStatus === "provisioning" ||
     runtimeDisplayStatus === "starting";
@@ -1539,6 +1574,22 @@ export function ThreadDetailPromptArea({
   const promptStack = useMemo(
     () => (
       <>
+        {nativePermissionMismatch ? (
+          <NativePermissionMismatchCard
+            key={thread.id}
+            observation={nativePermissionMismatch}
+            threadId={thread.id}
+            canApply={
+              nativePermissionMismatch.kind === "mismatch" &&
+              permissionModeOptions.some(
+                (option) =>
+                  option.value === nativePermissionMismatch.nativeMode &&
+                  option.disabled !== true,
+              )
+            }
+            onApply={setPermissionMode}
+          />
+        ) : null}
         {childPendingInteractionBanners}
         {activeWorkflows.map((workflow) => (
           <ThreadWorkflowCard
@@ -1664,6 +1715,7 @@ export function ThreadDetailPromptArea({
       activeBackgroundCommands,
       isBackgroundCommandsExpanded,
       modelFallback,
+      nativePermissionMismatch,
       parentThreadSection,
       childThreadsSection,
       pullRequestSection,
@@ -1674,6 +1726,9 @@ export function ThreadDetailPromptArea({
       queuedMessagesPending,
       resolveMentionLink,
       runtimeDisplayStatus,
+      isThreadRunning,
+      permissionModeOptions,
+      setPermissionMode,
       shouldSteerWhenReady,
       shouldHideComposer,
       submitMode.kind,
@@ -1726,7 +1781,27 @@ export function ThreadDetailPromptArea({
       collapseResetKey={thread.id}
       focusEndKey={bottomFocusEndKey}
       environmentSummary={environmentSummary}
-      contextWindowUsage={contextWindowUsage ?? null}
+      contextWindowUsage={nativeContext.usage}
+      contextWindowNote={nativeContext.note}
+      contextWindowSourceLabel={nativeContext.sourceLabel}
+      contextTokenLabel={nativeContext.tokenLabel}
+      onRequestContextCompact={() => compactThread.request(thread.id)}
+      contextCompactState={{
+        ...compactThread.stateFor(thread.id),
+        disabledReason:
+          thread.status !== "idle" && thread.status !== "error"
+            ? "доступно, когда поток свободен"
+            : null,
+      }}
+      nativeQuotaIndicator={
+        nativeHistoryProvider?.capabilities.nativeHistoryReader !==
+        "zcode-sqlite" ? null : (
+          <NativeQuotaIndicator
+            quota={nativeQuota.data}
+            error={nativeQuota.isError}
+          />
+        )
+      }
       execution={bottomExecutionConfig}
       permission={bottomPermissionConfig}
       typeahead={typeaheadConfig}

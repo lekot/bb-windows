@@ -14,6 +14,10 @@ import type {
   RequestDiffFileContents,
 } from "@/components/git-diff/GitDiffCardBody";
 import type { DiffPatchState } from "@/hooks/queries/use-environment-diff-patches";
+import type {
+  EnvironmentFilePreviewSource,
+} from "@bb/client-core";
+import type { GitDiffFilePreviewHandler } from "@/components/git-diff/git-diff-file-preview";
 import {
   resetPluginSlotStoreForTest,
   setPluginSlotRegistrations,
@@ -45,11 +49,15 @@ function buildEntry(overrides: Partial<DiffFileEntry> = {}): DiffFileEntry {
 function renderCard({
   entry,
   onLoadPatch = vi.fn(),
+  onOpenFilePreview,
+  deletedFilePreviewSource,
   onRequestFileContents,
   patchState = { status: "idle" },
 }: {
   entry: DiffFileEntry;
   onLoadPatch?: () => void;
+  onOpenFilePreview?: GitDiffFilePreviewHandler;
+  deletedFilePreviewSource?: EnvironmentFilePreviewSource | null;
   onRequestFileContents?: RequestDiffFileContents;
   patchState?: DiffPatchState;
 }) {
@@ -66,6 +74,8 @@ function renderCard({
       patchState={patchState}
       onLoadPatch={onLoadPatch}
       onRetry={() => {}}
+      onOpenFilePreview={onOpenFilePreview}
+      deletedFilePreviewSource={deletedFilePreviewSource}
       onRequestFileContents={onRequestFileContents}
     />,
   );
@@ -87,6 +97,25 @@ afterEach(() => {
 });
 
 describe("DiffFileCard", () => {
+  it("opens a deleted file from its old Git version", () => {
+    const onOpenFilePreview = vi.fn<GitDiffFilePreviewHandler>();
+    const path = "outputs/mk015_mk016_test_documents.json";
+
+    renderCard({
+      entry: buildEntry({ changeKind: "deleted", path }),
+      onOpenFilePreview,
+      deletedFilePreviewSource: { kind: "head" },
+    });
+
+    fireEvent.click(screen.getByTitle(path));
+
+    expect(onOpenFilePreview).toHaveBeenCalledWith({
+      path,
+      source: { kind: "head" },
+      statusLabel: "deleted",
+    });
+  });
+
   it("previews on-demand binary images without loading the binary patch", async () => {
     const imageResult: DiffFileContentsResult = {
       kind: "image",

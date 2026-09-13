@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
@@ -423,6 +423,7 @@ const NAV_PANEL_REGISTRATION_FIELDS = [
   "component",
   "fixedTabs",
   "experimental_sidebarAccessory",
+  "experimental_sidebarPlacement",
   "headerContent",
 ] as const satisfies readonly (keyof PluginNavPanelRegistration)[];
 
@@ -548,7 +549,7 @@ describe("bb-plugin-authoring skill", () => {
       onError,
       shouldCreateNewSourceFile,
     ) =>
-      file === filename
+      resolve(file) === resolve(filename)
         ? ts.createSourceFile(filename, source!, languageVersion)
         : readSource(file, languageVersion, onError, shouldCreateNewSourceFile);
     const program = ts.createProgram([filename], options, host);

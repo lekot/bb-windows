@@ -1881,7 +1881,8 @@ describe("queued row affordances", () => {
         sendAt: 0,
       },
     ]);
-    expect(getByText(/^Retry failed turn from /u)).toBeDefined();
+    expect(getByText("Ожидание восстановления лимита")).toBeDefined();
+    expect(getByText("Время повтора наступило · ожидаем запуска")).toBeDefined();
     expect(
       getByText(/^Rate limited · retrying at .* · attempt 2$/u),
     ).toBeDefined();

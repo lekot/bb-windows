@@ -72,6 +72,7 @@ type ThreadShowEnvironmentJsonPayload = Environment & {
 interface ThreadShowJsonPayload extends ThreadStatusPayload {
   environment: ThreadShowEnvironmentJsonPayload | null;
   pendingTodos: ThreadTimelinePendingTodos | null;
+  providerSessionId: string | null;
   workStatus?: WorkspaceStatus | null;
   gitDiff?: ThreadGitDiffResponse | null;
 }
@@ -325,6 +326,7 @@ export function registerShowCommand(
               fetchedPullRequest,
             ),
             pendingTodos,
+            providerSessionId: thread.providerSessionId ?? null,
           };
           if (fetchedWorkStatus !== undefined) {
             jsonPayload.workStatus = fetchedWorkStatus.available

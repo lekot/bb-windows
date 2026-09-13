@@ -231,6 +231,38 @@ export const BB_TRANSCRIPTION_ENV = defineEnvVar<string>({
   parse: parseTranscriptionModelValue,
 });
 
+export const BB_LOCAL_WHISPER_URL_ENV = defineEnvVar<string>({
+  description:
+    "Local Whisper ASR endpoint used by local-whisper/* transcription",
+  name: "BB_LOCAL_WHISPER_URL",
+  parse: parseOptionalUrlEnvValue,
+});
+
+export const BB_LOCAL_WHISPER_LANGUAGE_ENV = defineEnvVar<string>({
+  description: "Language sent to the local Whisper ASR endpoint",
+  name: "BB_LOCAL_WHISPER_LANGUAGE",
+  parse: parseStringEnvValue,
+});
+
+export const BB_VOICE_CORRECTION_MODEL_ENV = defineEnvVar<string>({
+  description: "Model used to correct voice transcriptions",
+  name: "BB_VOICE_CORRECTION_MODEL",
+  parse: parseStringEnvValue,
+});
+
+export const BB_VOICE_CORRECTION_URL_ENV = defineEnvVar<string>({
+  description:
+    "OpenAI-compatible chat completions endpoint for voice correction",
+  name: "BB_VOICE_CORRECTION_URL",
+  parse: parseOptionalUrlEnvValue,
+});
+
+export const BB_VOICE_CORRECTION_API_KEY_ENV = defineEnvVar<string>({
+  description: "Optional API key for the voice correction endpoint",
+  name: "BB_VOICE_CORRECTION_API_KEY",
+  parse: parseStringEnvValue,
+});
+
 export const OPENAI_API_KEY_ENV = defineEnvVar<string>({
   description:
     "OpenAI API key used when an explicit OpenAI provider route is configured",
@@ -366,6 +398,11 @@ export const DEFAULT_BB_MARKETPLACE_URL =
 export const DEFAULT_BB_INFERENCE = DEFAULTS.inferenceModel;
 export const DEFAULT_BB_INFERENCE_FALLBACK = DEFAULTS.inferenceFallbackModel;
 export const DEFAULT_BB_TRANSCRIPTION = DEFAULTS.transcriptionModel;
+export const DEFAULT_BB_LOCAL_WHISPER_URL = "http://127.0.0.1:9003/asr";
+export const DEFAULT_BB_LOCAL_WHISPER_LANGUAGE = "ru";
+export const DEFAULT_BB_VOICE_CORRECTION_MODEL = "glm-5.3-flash";
+export const DEFAULT_BB_VOICE_CORRECTION_URL = "";
+export const DEFAULT_BB_VOICE_CORRECTION_API_KEY = "";
 export const DEFAULT_BB_FF_PLACEHOLDER = defaultFeatureFlags.placeholder;
 export const DEFAULT_BB_FF_TIMELINE_WINDOW_EVENT_BUDGET =
   defaultFeatureFlags.timelineWindowEventBudget;

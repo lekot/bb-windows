@@ -155,6 +155,7 @@ async function startSmokeServer({
         generalSettings: {},
         hostDaemonPort: 38887,
         primaryHostPlatform: null,
+        voiceCorrectionEnabled: false,
         voiceTranscriptionEnabled: false,
       });
       return;

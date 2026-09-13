@@ -1,5 +1,11 @@
 import { z } from "zod";
 import {
+  defaultFontScalePercent,
+  defaultTypographyProfile,
+  fontScalePercentSchema,
+  typographyProfileSchema,
+} from "./app-typography.js";
+import {
   defaultResolvedCodeTheme,
   resolvedCodeThemeSchema,
 } from "./code-theme.js";
@@ -89,6 +95,8 @@ export const appThemeSchema = z.object({
   themeId: z.string().min(1),
   customCss: z.string().max(CUSTOM_THEME_CSS_MAX_LENGTH).nullable(),
   faviconColor: faviconColorPreferenceSchema,
+  typographyProfile: typographyProfileSchema.default(defaultTypographyProfile),
+  fontScalePercent: fontScalePercentSchema.default(defaultFontScalePercent),
   resolvedCodeTheme: resolvedCodeThemeSchema.default(defaultResolvedCodeTheme),
 });
 export type AppTheme = z.infer<typeof appThemeSchema>;
@@ -110,6 +118,8 @@ export function formatPluginThemeId(pluginId: string, themeId: string): string {
 export const appThemeSelectionSchema = z.object({
   themeId: z.string().min(1),
   faviconColor: faviconColorPreferenceSchema,
+  typographyProfile: typographyProfileSchema.optional(),
+  fontScalePercent: fontScalePercentSchema.optional(),
 });
 export type AppThemeSelection = z.infer<typeof appThemeSelectionSchema>;
 
@@ -117,5 +127,7 @@ export const defaultAppTheme: AppTheme = {
   themeId: "default",
   customCss: null,
   faviconColor: defaultFaviconColor,
+  typographyProfile: defaultTypographyProfile,
+  fontScalePercent: defaultFontScalePercent,
   resolvedCodeTheme: defaultResolvedCodeTheme,
 };

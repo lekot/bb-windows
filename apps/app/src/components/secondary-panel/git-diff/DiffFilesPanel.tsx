@@ -4,7 +4,9 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { DiffFileEntry, DiffPatchEntry } from "@bb/server-contract";
 import type { DiffPresentation } from "@/components/code/code-rendering";
 import type { WorkspaceDiffTarget } from "@bb/domain";
+import type { EnvironmentFilePreviewSource } from "@bb/client-core";
 import type { RequestDiffFileContents } from "@/components/git-diff/GitDiffCardBody";
+import type { GitDiffFilePreviewHandler } from "@/components/git-diff/git-diff-file-preview";
 import {
   type DiffPatchState,
   type LoadDiffPatchPath,
@@ -37,7 +39,8 @@ interface DiffFilesPanelProps {
   scrollToPath?: string | null;
   onScrolledToPath?: () => void;
   onOpenFileInEditor?: (path: string) => void;
-  onOpenFilePreview?: (path: string) => void;
+  onOpenFilePreview?: GitDiffFilePreviewHandler;
+  deletedFilePreviewSource: EnvironmentFilePreviewSource | null;
   onRequestFileContents?: RequestDiffFileContents;
   onSelectionAddToChat?: (text: string) => void;
 }
@@ -57,6 +60,7 @@ export function DiffFilesPanel({
   onScrolledToPath,
   onOpenFileInEditor,
   onOpenFilePreview,
+  deletedFilePreviewSource,
   onRequestFileContents,
   onSelectionAddToChat,
 }: DiffFilesPanelProps) {
@@ -176,6 +180,7 @@ export function DiffFilesPanel({
                 retry={retry}
                 onOpenFileInEditor={onOpenFileInEditor}
                 onOpenFilePreview={onOpenFilePreview}
+                deletedFilePreviewSource={deletedFilePreviewSource}
                 onRequestFileContents={onRequestFileContents}
                 onSelectionAddToChat={onSelectionAddToChat}
               />
@@ -200,7 +205,8 @@ interface DiffFileRowProps {
   loadPath: LoadDiffPatchPath;
   retry: RetryDiffPatchPath;
   onOpenFileInEditor?: (path: string) => void;
-  onOpenFilePreview?: (path: string) => void;
+  onOpenFilePreview?: GitDiffFilePreviewHandler;
+  deletedFilePreviewSource: EnvironmentFilePreviewSource | null;
   onRequestFileContents?: RequestDiffFileContents;
   onSelectionAddToChat?: (text: string) => void;
 }
@@ -216,6 +222,7 @@ function DiffFileRow({
   retry,
   onOpenFileInEditor,
   onOpenFilePreview,
+  deletedFilePreviewSource,
   onRequestFileContents,
   onSelectionAddToChat,
 }: DiffFileRowProps) {
@@ -254,6 +261,7 @@ function DiffFileRow({
       onRetry={handleRetry}
       onOpenFileInEditor={onOpenFileInEditor}
       onOpenFilePreview={onOpenFilePreview}
+      deletedFilePreviewSource={deletedFilePreviewSource}
       onRequestFileContents={onRequestFileContents}
       onSelectionAddToChat={onSelectionAddToChat}
     />

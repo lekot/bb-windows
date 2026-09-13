@@ -2,7 +2,7 @@ import type {
   ProviderUsage,
   ProviderUsageResponse,
 } from "@bb/host-daemon-contract";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { registerHostRpcResponder } from "../helpers/host-rpc.js";
 import { readJson } from "../helpers/json.js";
 import { minimalProviderRegistration } from "../helpers/provider-registry.js";
@@ -147,6 +147,56 @@ describe("GET /api/v1/system/usage-limits", () => {
           (request) => request.command.type === "provider.health",
         ),
       ).toBe(false);
+    });
+  });
+
+  it("keeps the last successful snapshot during a transient provider error", async () => {
+    await withTestHarness(async (harness) => {
+      const primary = seedHostSession(harness.deps, { id: "host-primary" });
+      seedPrimaryHost(harness.deps, primary.host.id);
+      let usage: ProviderUsage = USAGE_RESPONSE.codex!;
+      const responder = registerHostRpcResponder(harness, {
+        hostId: primary.host.id,
+        sessionId: primary.session.id,
+        handle(request) {
+          if (request.command.type === "provider.usage") {
+            return {
+              ok: true as const,
+              result: { supported: true as const, usage },
+            };
+          }
+          return handleUsageRequest(request);
+        },
+      });
+      const initialNow = Date.now();
+      const dateNow = vi.spyOn(Date, "now").mockReturnValue(initialNow);
+
+      try {
+        const first = await harness.app.request(
+          "/api/v1/system/usage-limits?providerId=codex",
+        );
+        expect(await readJson(first)).toEqual({ codex: USAGE_RESPONSE.codex });
+
+        usage = {
+          status: "error",
+          message: "Provider usage is temporarily unavailable.",
+          planLabel: "Plus",
+          accountEmail: "codex@example.com",
+        };
+        dateNow.mockReturnValue(initialNow + 61_000);
+        const second = await harness.app.request(
+          "/api/v1/system/usage-limits?providerId=codex",
+        );
+
+        expect(await readJson(second)).toEqual({ codex: USAGE_RESPONSE.codex });
+        expect(
+          responder.requests.filter(
+            (request) => request.command.type === "provider.usage",
+          ),
+        ).toHaveLength(2);
+      } finally {
+        dateNow.mockRestore();
+      }
     });
   });
 

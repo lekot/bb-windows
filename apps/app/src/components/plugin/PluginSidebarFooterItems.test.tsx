@@ -35,6 +35,7 @@ import {
 import {
   PluginSidebarFooterDisclosure,
   PluginSidebarFooterItems,
+  PluginSidebarFooterNavPanels,
   usePluginSidebarFooterDisclosure,
 } from "./PluginSidebarFooterItems";
 import {
@@ -95,6 +96,7 @@ function FooterHarness() {
           activeDisclosureKey={disclosure.activeKey}
           onDisclosureCommand={disclosure.handleCommand}
         />
+        <PluginSidebarFooterNavPanels />
       </SidebarMenu>
     </>
   );
@@ -119,6 +121,31 @@ afterEach(() => {
 });
 
 describe("PluginSidebarFooterItems", () => {
+  it("opens footer-placed nav panels", () => {
+    setPluginSlotRegistrations(
+      "theme-preview",
+      registrationSet({
+        navPanels: [
+          {
+            id: "preview",
+            title: "Theme Preview",
+            icon: "Palette",
+            path: "preview",
+            component: () => null,
+            experimental_sidebarPlacement: "footer",
+          },
+        ],
+      }),
+    );
+
+    renderWithProviders(<FooterHarness />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Theme Preview" }));
+    expect(screen.getByLabelText("Current path").textContent).toBe(
+      "/plugins/theme-preview/preview",
+    );
+  });
+
   it("prefers branding.icon over the logo and contribution icon", () => {
     setPluginLogoUrls(
       new Map([

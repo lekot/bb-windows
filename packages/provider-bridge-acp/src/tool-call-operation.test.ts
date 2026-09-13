@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   classifyAcpToolCall,
@@ -72,7 +73,7 @@ describe("resolveAcpFileChangeWriteScope", () => {
         "/tmp/qa-1719/notes.md",
         "/tmp/qa-1719/",
       ]),
-    ).toBe("/tmp/qa-1719");
+    ).toBe(path.normalize("/tmp/qa-1719"));
   });
 
   it("normalizes .. segments so a path outside the candidate does not pass a raw prefix test", () => {
@@ -81,7 +82,7 @@ describe("resolveAcpFileChangeWriteScope", () => {
     ).toBeNull();
     expect(
       resolveAcpFileChangeWriteScope(["/repo/src/../notes.md", "/repo"]),
-    ).toBe("/repo");
+    ).toBe(path.normalize("/repo"));
   });
 
   it("returns null for paths in different directories and for a lookalike prefix", () => {
@@ -96,7 +97,13 @@ describe("resolveAcpFileChangeWriteScope", () => {
   it("ignores blank paths and never yields an empty scope", () => {
     expect(resolveAcpFileChangeWriteScope(["", "  "])).toBeNull();
     expect(resolveAcpFileChangeWriteScope(["", "/tmp/qa-1719/notes.md"])).toBe(
-      "/tmp/qa-1719/notes.md",
+      path.normalize("/tmp/qa-1719/notes.md"),
     );
+  });
+
+  it("keeps an absolute root absolute rather than returning a drive-relative scope", () => {
+    const root = path.parse(path.resolve(".")).root;
+    expect(resolveAcpFileChangeWriteScope([root, path.join(root, "scope-probe", "file")])).toBe(root);
+    expect(path.isAbsolute(resolveAcpFileChangeWriteScope([root]) ?? "")).toBe(true);
   });
 });

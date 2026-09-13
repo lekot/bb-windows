@@ -6,6 +6,20 @@ const MINUTE_MS = 60 * 1000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 
+export function isRateLimitRetry(payload: QueuedMessagePayload): boolean {
+  return payload.kind === "retry" && payload.reason === "Rate limited";
+}
+
+export function describeRateLimitSchedule(now: number, sendAt: number | null): string {
+  if (sendAt === null) return "Время автоповтора пока не назначено";
+  if (sendAt <= now) return "Время повтора наступило · ожидаем запуска";
+  const minutes = Math.ceil((sendAt - now) / MINUTE_MS);
+  const remaining = minutes >= 60
+    ? `${Math.floor(minutes / 60)} ч ${minutes % 60} мин`
+    : `${minutes} мин`;
+  return `Автоповтор ${formatScheduledTime({ now, timestamp: sendAt })} · осталось ${remaining}`;
+}
+
 export function formatQueuedMessageCountdown(
   remainingMs: number,
 ): string | null {

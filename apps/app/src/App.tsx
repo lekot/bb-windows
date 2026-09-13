@@ -17,6 +17,7 @@ import { NativeShellReporter } from "./lib/native-shell";
 import { UiPreferencesSync } from "@/lib/ui-preferences/UiPreferencesSync";
 import { AppFileExternalNavigationHost } from "./components/plugin/AppFileExternalNavigationHost";
 import { useAppTheme } from "./hooks/useAppTheme";
+import { useTypography } from "./hooks/useTypography";
 import { useFaviconColorSync } from "./lib/favicon-color-preference";
 import { useDesktopThemeSync } from "./hooks/useDesktopThemeSync";
 import { usePluginFrontendBoot } from "./hooks/usePluginFrontendBoot";
@@ -406,6 +407,7 @@ export function App() {
   useWebSocket();
   useDesktopThemeSync();
   useAppTheme();
+  useTypography();
   useFaviconColorSync();
   usePluginFrontendBoot();
   useRememberPluginNavPanelChrome();

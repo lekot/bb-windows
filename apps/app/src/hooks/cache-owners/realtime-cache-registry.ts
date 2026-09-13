@@ -44,6 +44,7 @@ import {
   allThreadStorageLocationsQueryKeyPrefix,
   allThreadStoragePathsQueryKeyPrefix,
   allSystemExecutionOptionsQueryKeyPrefix,
+  allSystemUsageLimitsQueryKeyPrefix,
   allSystemThemesQueryKeyPrefix,
   allThreadQueryKeyPrefix,
   allTerminalsQueryKeyPrefix,
@@ -345,6 +346,7 @@ export const REALTIME_THREAD_CHANGE_REGISTRY = {
       dirtyThreadListQueriesForBackgroundActivity,
       dirtyThreadDetailQueriesForBackgroundActivity,
       dirtyThreadSearchQueriesForCompletedTurn,
+      dirtyUsageLimitsForCompletedTurn,
       dirtyThreadTimelineQueries,
       dirtyThreadPullRequestQueryForCompletedTurn,
       dirtyThreadTurnRequestQueries,
@@ -810,8 +812,15 @@ function dirtyThreadDetailQueries({
 }
 
 function dirtyThreadDefaultExecutionOptionsQueries({
+  eventTypes,
   threadId,
 }: ThreadRealtimeDirtyContext): QueryKey[] {
+  if (
+    eventTypes !== undefined &&
+    !eventTypes.includes("client/turn/requested")
+  ) {
+    return [];
+  }
   return threadId ? [threadDefaultExecutionOptionsQueryKey(threadId)] : [];
 }
 
@@ -839,6 +848,39 @@ function dirtyThreadSearchQueriesForCompletedTurn({
   invalidateQueryKeysWithoutCancelingActiveFetches({
     queryClient,
     queryKeys: [threadSearchQueryKeyPrefix()],
+  });
+}
+
+function dirtyUsageLimitsForCompletedTurn({
+  eventTypes,
+  flushOnce,
+  queryClient,
+  threadId,
+}: ThreadRealtimeDirtyContext): void {
+  if (!threadId || !eventTypes?.includes("turn/completed")) {
+    return;
+  }
+  const cachedThread =
+    queryClient.getQueryData<ThreadWithRuntime>(threadQueryKey(threadId)) ??
+    getCachedThreadListPlaceholder(queryClient, threadId) ??
+    getCachedSidebarNavigationThreads(queryClient).find(
+      (thread) => thread.id === threadId,
+    );
+  const providerId = cachedThread?.providerId;
+  if (
+    providerId === undefined ||
+    !flushOnce(`usage-limits:${providerId}:turn-completed`)
+  ) {
+    return;
+  }
+  const providerQueryKeys = queryClient
+    .getQueryCache()
+    .findAll({ queryKey: allSystemUsageLimitsQueryKeyPrefix() })
+    .map((query) => query.queryKey)
+    .filter((queryKey) => queryKey[2] === providerId);
+  invalidateQueryKeysWithoutCancelingActiveFetches({
+    queryClient,
+    queryKeys: providerQueryKeys,
   });
 }
 

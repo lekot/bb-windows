@@ -11,9 +11,10 @@ import {
   spawnPortableOutputProcess,
   supportsProcessGroups,
 } from "@bb/process-utils";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
-import path from "node:path";
+import path, { delimiter } from "node:path";
 import { WorkspaceError } from "bb-environment-provider-host/git";
 import { createTerminalOutputLineReader } from "bb-environment-provider-host/terminal-output";
 import {
@@ -47,6 +48,7 @@ interface BuildLifecycleScriptCommandArgs {
   scriptName: string;
   platform: NodeJS.Platform;
   scriptPath: string;
+  windowsBashPath?: string | null;
 }
 
 interface RunLifecycleScriptArgs extends RunSetupScriptArgs {
@@ -58,10 +60,21 @@ export function buildLifecycleScriptCommand(
   args: BuildLifecycleScriptCommandArgs,
 ): LifecycleScriptCommand {
   if (args.platform === "win32") {
-    throw new WorkspaceError(
-      "setup_script_failed",
-      `POSIX shell ${args.kind} scripts are not supported on Windows: ${args.scriptName}`,
-    );
+    const bashPath =
+      args.windowsBashPath === undefined
+        ? resolveWindowsBashPath()
+        : args.windowsBashPath;
+    if (bashPath === null) {
+      throw new WorkspaceError(
+        "setup_script_failed",
+        `Git Bash is required to run ${args.kind} script ${args.scriptName} on Windows. Install Git for Windows.`,
+      );
+    }
+    return {
+      command: bashPath,
+      args: [args.scriptPath.replaceAll("\\", "/")],
+      text: `${bashPath} ${args.scriptName}`,
+    };
   }
 
   return {
@@ -69,6 +82,35 @@ export function buildLifecycleScriptCommand(
     args: ["bash", args.scriptPath],
     text: `env bash ${args.scriptName}`,
   };
+}
+
+function resolveWindowsBashPath(): string | null {
+  const candidates = [
+    process.env.ProgramFiles
+      ? path.join(process.env.ProgramFiles, "Git", "bin", "bash.exe")
+      : null,
+    process.env.LOCALAPPDATA
+      ? path.join(
+          process.env.LOCALAPPDATA,
+          "Programs",
+          "Git",
+          "bin",
+          "bash.exe",
+        )
+      : null,
+    ...(process.env.PATH ?? "")
+      .split(delimiter)
+      .filter(Boolean)
+      .filter(
+        (entry) =>
+          !entry.toLowerCase().endsWith("windows\\system32") &&
+          !entry.toLowerCase().endsWith("windows/system32"),
+      )
+      .map((entry) => path.join(entry, "bash.exe")),
+  ];
+  return (
+    candidates.find((candidate) => candidate && existsSync(candidate)) ?? null
+  );
 }
 
 async function resolveLifecycleScriptPath(
@@ -128,7 +170,6 @@ async function runLifecycleScript(
     detached: supportsProcessGroups(),
     env,
   });
-
   const outputLineReader = createTerminalOutputLineReader();
   let outputIndex = 0;
   let abortRequested = false;

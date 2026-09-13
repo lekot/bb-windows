@@ -14,7 +14,7 @@ export const sidebarFooterHiddenAtom = createSyncedPreferenceAtom(
 );
 export const SIDEBAR_FOOTER_MORE_ID = "sidebar-footer-more";
 
-export type BuiltinFooterId = "settings" | "report-bug";
+export type BuiltinFooterId = "settings" | "typography" | "report-bug";
 export type FooterItem = { key: string; label: string; icon: string } & (
   | { kind: "builtin"; id: BuiltinFooterId }
   | { kind: "plugin"; slot: PluginSidebarFooterItemSlot }
@@ -37,6 +37,13 @@ export function useSidebarFooterPreferences() {
       key: "builtin:settings",
       label: "Settings",
       icon: "Settings",
+    },
+    {
+      kind: "builtin",
+      id: "typography",
+      key: "builtin:typography",
+      label: "Typography",
+      icon: "Aa",
     },
     ...sidebarFooterItems.map((slot): FooterItem => ({
       kind: "plugin",

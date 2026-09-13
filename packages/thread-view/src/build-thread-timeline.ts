@@ -15,6 +15,7 @@ import type {
   TimelineWorkflowWorkRow,
 } from "@bb/server-contract";
 import {
+  getThreadEventScopeTurnId,
   isBackgroundAgentTaskType,
   readTerminalOutputLines,
   type ActiveThinking,
@@ -894,6 +895,7 @@ function buildPendingSteerRowsFromEvents(
   >();
   const unresolvedSteerRequestIds = new Set<string>();
   const unresolvedSteerRequestOrder: string[] = [];
+  const unresolvedSteerTurnByRequestId = new Map<string, string>();
   let explicitRejectionNeedsCompanionError = false;
   for (const { event, meta } of orderedEvents) {
     if (
@@ -903,17 +905,39 @@ function buildPendingSteerRowsFromEvents(
     ) {
       unresolvedSteerRequestIds.add(event.requestId);
       unresolvedSteerRequestOrder.push(event.requestId);
+      unresolvedSteerTurnByRequestId.set(
+        event.requestId,
+        event.target.expectedTurnId,
+      );
       explicitRejectionNeedsCompanionError = false;
       continue;
     }
     if (event.type === "turn/input/accepted") {
       unresolvedSteerRequestIds.delete(event.clientRequestId);
+      unresolvedSteerTurnByRequestId.delete(event.clientRequestId);
       explicitRejectionNeedsCompanionError = false;
       continue;
     }
     if (event.type === "client/turn/rejected") {
       unresolvedSteerRequestIds.delete(event.requestId);
+      unresolvedSteerTurnByRequestId.delete(event.requestId);
       explicitRejectionNeedsCompanionError = true;
+      continue;
+    }
+    if (
+      event.type === "turn/completed" &&
+      (options.threadStatus === "idle" || options.threadStatus === "error")
+    ) {
+      const completedTurnId = getThreadEventScopeTurnId(event.scope);
+      if (completedTurnId !== null) {
+        for (const [requestId, expectedTurnId] of unresolvedSteerTurnByRequestId) {
+          if (expectedTurnId !== completedTurnId) continue;
+          unresolvedSteerRequestIds.delete(requestId);
+          unresolvedSteerTurnByRequestId.delete(requestId);
+          legacyRejectedRequestMetaById.set(requestId, meta);
+        }
+      }
+      explicitRejectionNeedsCompanionError = false;
       continue;
     }
     if (
@@ -928,7 +952,10 @@ function buildPendingSteerRowsFromEvents(
       while (requestId && !unresolvedSteerRequestIds.delete(requestId)) {
         requestId = unresolvedSteerRequestOrder.pop();
       }
-      if (requestId) legacyRejectedRequestMetaById.set(requestId, meta);
+      if (requestId) {
+        unresolvedSteerTurnByRequestId.delete(requestId);
+        legacyRejectedRequestMetaById.set(requestId, meta);
+      }
       continue;
     }
     explicitRejectionNeedsCompanionError = false;

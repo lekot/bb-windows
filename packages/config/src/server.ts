@@ -20,23 +20,33 @@ import {
   BB_INHERITED_SKILLS_ROOTS_ENV,
   BB_INFERENCE_FALLBACK_ENV,
   BB_INFERENCE_ENV,
+  BB_LOCAL_WHISPER_LANGUAGE_ENV,
+  BB_LOCAL_WHISPER_URL_ENV,
   BB_MARKETPLACE_URL_ENV,
   BB_POSTHOG_API_KEY_ENV,
   BB_SERVER_BIND_HOST_ENV,
   BB_SERVER_LAUNCH_ID_ENV,
   BB_TELEMETRY_ENV,
   BB_TRANSCRIPTION_ENV,
+  BB_VOICE_CORRECTION_API_KEY_ENV,
+  BB_VOICE_CORRECTION_MODEL_ENV,
+  BB_VOICE_CORRECTION_URL_ENV,
   DEFAULT_BB_APP_URL,
   DEFAULT_BB_APP_SURFACE,
   DEFAULT_BB_APP_VERSION,
   DEFAULT_BB_EXTERNAL_URL,
   DEFAULT_BB_INFERENCE_FALLBACK,
   DEFAULT_BB_INFERENCE,
+  DEFAULT_BB_LOCAL_WHISPER_LANGUAGE,
+  DEFAULT_BB_LOCAL_WHISPER_URL,
   DEFAULT_BB_MARKETPLACE_URL,
   DEFAULT_BB_POSTHOG_API_KEY,
   DEFAULT_BB_SERVER_BIND_HOST,
   DEFAULT_BB_TELEMETRY,
   DEFAULT_BB_TRANSCRIPTION,
+  DEFAULT_BB_VOICE_CORRECTION_API_KEY,
+  DEFAULT_BB_VOICE_CORRECTION_MODEL,
+  DEFAULT_BB_VOICE_CORRECTION_URL,
   DEFAULT_OPENAI_API_KEY,
   OPENAI_API_KEY_ENV,
   parseServerBindHost,
@@ -58,12 +68,17 @@ export interface ServerConfig
   BB_INHERITED_SKILLS_ROOTS: string[];
   BB_INFERENCE: string;
   BB_INFERENCE_FALLBACK: string;
+  BB_LOCAL_WHISPER_LANGUAGE: string;
+  BB_LOCAL_WHISPER_URL: string;
   BB_POSTHOG_API_KEY: string;
   BB_MARKETPLACE_URL: string;
   BB_SERVER_BIND_HOST: ServerBindHost;
   BB_SERVER_LAUNCH_ID?: string;
   BB_TELEMETRY: boolean;
   BB_TRANSCRIPTION: string;
+  BB_VOICE_CORRECTION_API_KEY: string;
+  BB_VOICE_CORRECTION_MODEL: string;
+  BB_VOICE_CORRECTION_URL: string;
   OPENAI_API_KEY: string;
   featureFlags: FeatureFlags;
 }
@@ -181,6 +196,36 @@ export function loadServerConfig(
       context: loader.context,
       defaultValue: DEFAULT_BB_TRANSCRIPTION,
       definition: BB_TRANSCRIPTION_ENV,
+      env: loader.env,
+    }),
+    BB_LOCAL_WHISPER_LANGUAGE: readEnvVarWithDefault({
+      context: loader.context,
+      defaultValue: DEFAULT_BB_LOCAL_WHISPER_LANGUAGE,
+      definition: BB_LOCAL_WHISPER_LANGUAGE_ENV,
+      env: loader.env,
+    }),
+    BB_LOCAL_WHISPER_URL: readEnvVarWithDefault({
+      context: loader.context,
+      defaultValue: DEFAULT_BB_LOCAL_WHISPER_URL,
+      definition: BB_LOCAL_WHISPER_URL_ENV,
+      env: loader.env,
+    }),
+    BB_VOICE_CORRECTION_API_KEY: readEnvVarWithDefault({
+      context: loader.context,
+      defaultValue: DEFAULT_BB_VOICE_CORRECTION_API_KEY,
+      definition: BB_VOICE_CORRECTION_API_KEY_ENV,
+      env: loader.env,
+    }),
+    BB_VOICE_CORRECTION_MODEL: readEnvVarWithDefault({
+      context: loader.context,
+      defaultValue: DEFAULT_BB_VOICE_CORRECTION_MODEL,
+      definition: BB_VOICE_CORRECTION_MODEL_ENV,
+      env: loader.env,
+    }),
+    BB_VOICE_CORRECTION_URL: readEnvVarWithDefault({
+      context: loader.context,
+      defaultValue: DEFAULT_BB_VOICE_CORRECTION_URL,
+      definition: BB_VOICE_CORRECTION_URL_ENV,
       env: loader.env,
     }),
     OPENAI_API_KEY: readEnvVarWithDefault({

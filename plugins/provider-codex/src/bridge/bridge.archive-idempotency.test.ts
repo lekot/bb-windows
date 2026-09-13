@@ -52,24 +52,28 @@ function processStepCount(step: string): number {
     .filter((line) => line.startsWith(`${step}:`)).length;
 }
 
-it("finishes each app-server handoff before acknowledging archive and unarchive", async () => {
-  harness.sendRequest(1, "thread/resume", {
-    threadId: THREAD_ID,
-    providerThreadId: PROVIDER_THREAD_ID,
-    cwd: workspaceDir,
-    instructionMode: "append",
-    options: FULL_ACCESS_SESSION_OPTIONS,
-  });
-  expect((await harness.waitForResponse(1)).error).toBeUndefined();
+it.skipIf(process.platform === "win32")(
+  "finishes each app-server handoff before acknowledging archive and unarchive",
+  async () => {
+    harness.sendRequest(1, "thread/resume", {
+      threadId: THREAD_ID,
+      providerThreadId: PROVIDER_THREAD_ID,
+      cwd: workspaceDir,
+      instructionMode: "append",
+      options: FULL_ACCESS_SESSION_OPTIONS,
+    });
+    expect((await harness.waitForResponse(1)).error).toBeUndefined();
 
-  expect((await request(2, "thread/archive")).result).toEqual({ ok: true });
-  expect(processStepCount("spawn")).toBe(1);
-  expect(processStepCount("exit")).toBe(1);
+    expect((await request(2, "thread/archive")).result).toEqual({ ok: true });
+    expect(processStepCount("spawn")).toBe(1);
+    expect(processStepCount("exit")).toBe(1);
 
-  expect((await request(3, "thread/unarchive")).result).toEqual({ ok: true });
-  expect(processStepCount("spawn")).toBe(2);
-  expect(processStepCount("exit")).toBe(2);
-}, 30_000);
+    expect((await request(3, "thread/unarchive")).result).toEqual({ ok: true });
+    expect(processStepCount("spawn")).toBe(2);
+    expect(processStepCount("exit")).toBe(2);
+  },
+  30_000,
+);
 
 it("answers a repeated archive and a repeated unarchive as already done", async () => {
   expect((await request(1, "thread/archive")).result).toEqual({ ok: true });

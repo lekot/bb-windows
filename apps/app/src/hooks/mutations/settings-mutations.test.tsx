@@ -26,6 +26,7 @@ import {
   threadTimelineTurnSummaryDetailsQueryKey,
 } from "../queries/query-keys";
 import {
+  useUpdateAppearance,
   useUpdateGeneralSettings,
   useUpdateKeyboardSettings,
 } from "./settings-mutations";
@@ -33,12 +34,71 @@ import {
 vi.mock("@/lib/sdk", () => {
   return {
     sdk: {
+      theme: {
+        set: vi.fn(),
+      },
       system: {
         updateGeneralSettings: vi.fn(),
         updateKeyboardSettings: vi.fn(),
       },
     },
   };
+});
+
+describe("appearance mutation", () => {
+  it("updates the cached typography before the request completes", async () => {
+    const { queryClient, wrapper } = createQueryClientTestHarness();
+    queryClient.setQueryData(systemConfigQueryKey(), systemConfig());
+    let resolveRequest: (selection: Awaited<ReturnType<typeof sdk.theme.set>>) => void =
+      () => {};
+    vi.mocked(sdk.theme.set).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+    const next = {
+      themeId: "default",
+      faviconColor: "default" as const,
+      typographyProfile: "editorial" as const,
+      fontScalePercent: 110 as const,
+    };
+    const { result } = renderHook(() => useUpdateAppearance(), { wrapper });
+
+    act(() => result.current.mutate(next));
+    await waitFor(() => {
+      expect(
+        queryClient.getQueryData<SystemConfigResponse>(systemConfigQueryKey())
+          ?.appearance,
+      ).toMatchObject(next);
+    });
+
+    act(() => resolveRequest({ ...systemConfig().appearance, ...next }));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+
+  it("restores the cached appearance when the request fails", async () => {
+    const { queryClient, wrapper } = createQueryClientTestHarness();
+    const previous = systemConfig();
+    queryClient.setQueryData(systemConfigQueryKey(), previous);
+    vi.mocked(sdk.theme.set).mockRejectedValue(new Error("write failed"));
+    const { result } = renderHook(() => useUpdateAppearance(), { wrapper });
+
+    act(() =>
+      result.current.mutate({
+        themeId: previous.appearance.themeId,
+        faviconColor: previous.appearance.faviconColor,
+        typographyProfile: "editorial",
+        fontScalePercent: 110,
+      }),
+    );
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    expect(
+      queryClient.getQueryData<SystemConfigResponse>(systemConfigQueryKey())
+        ?.appearance,
+    ).toEqual(previous.appearance);
+  });
 });
 
 const defaultKeybindings: AppKeybindings = [

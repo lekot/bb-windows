@@ -96,6 +96,18 @@ function resolveErrorTitleDetail(
     return { title: content, detail: null };
   }
 
+  if (/^Command thread[./]start failed$/u.test(message.message)) {
+    const cause = message.detail?.trim().split(/\r?\n/u)[0]?.trim();
+    if (cause) {
+      return {
+        title: cause.length > MAX_ERROR_TITLE_LENGTH
+          ? `${cause.slice(0, MAX_ERROR_TITLE_LENGTH - 1)}…`
+          : cause,
+        detail: message.detail,
+      };
+    }
+  }
+
   return {
     title: message.message,
     detail: detailBeyondTitle(message.detail, message.message),

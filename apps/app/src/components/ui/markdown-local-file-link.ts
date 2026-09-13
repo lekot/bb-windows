@@ -211,9 +211,11 @@ function isValidAbsoluteLocalFilePath({
   path,
   requireLikelyFileBasename,
 }: LocalFilePathValidationArgs): boolean {
+  const isAbsolutePath =
+    (path.startsWith("/") && !path.startsWith("//")) ||
+    /^[A-Za-z]:\//u.test(path);
   return (
-    path.startsWith("/") &&
-    !path.startsWith("//") &&
+    isAbsolutePath &&
     path !== "/" &&
     !path.endsWith("/") &&
     !path.includes("\n") &&
@@ -229,11 +231,13 @@ function parseAbsoluteLocalFileHref(
   href: string,
   requireLikelyFileBasename: boolean,
 ): MarkdownPreviewLocalFileLink | null {
+  const isAbsoluteHref =
+    (href.startsWith("/") && !href.startsWith("//")) ||
+    /^[A-Za-z]:\//u.test(href);
   if (
     href.length === 0 ||
     href.trim() !== href ||
-    !href.startsWith("/") ||
-    href.startsWith("//")
+    !isAbsoluteHref
   ) {
     return null;
   }

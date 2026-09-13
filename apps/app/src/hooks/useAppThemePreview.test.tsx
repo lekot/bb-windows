@@ -20,6 +20,8 @@ function customTheme(themeId: string, customCss: string): AppTheme {
     themeId,
     customCss,
     faviconColor: "default",
+    typographyProfile: "standard",
+    fontScalePercent: 100,
     resolvedCodeTheme: defaultResolvedCodeTheme,
   };
 }

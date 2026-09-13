@@ -25,6 +25,7 @@ import {
   systemConfigQueryKey,
   systemExecutionOptionsQueryKey,
   systemProvidersQueryKey,
+  systemUsageLimitsQueryKey,
   threadDefaultExecutionOptionsQueryKey,
   threadConversationOutlineQueryKey,
   threadQueuedMessagesQueryKey,
@@ -595,6 +596,47 @@ describe("createRealtimeCacheEffects", () => {
     expect(queryClient.getQueryState(threadSearchKey)?.isInvalidated).toBe(
       true,
     );
+
+    effects.dispose();
+  });
+
+  it("refreshes only the completed turn's provider usage", () => {
+    vi.useFakeTimers();
+    const { effects, queryClient } = createRealtimeEffectsTestContext();
+    const claudeUsageKey = systemUsageLimitsQueryKey("host-1", "claude-code");
+    const codexUsageKey = systemUsageLimitsQueryKey("host-1", "codex");
+    queryClient.setQueryData(threadQueryKey("thr_1"), {
+      providerId: "claude-code",
+    });
+    queryClient.setQueryData(claudeUsageKey, {
+      "claude-code": { status: "unauthenticated" },
+    });
+    queryClient.setQueryData(codexUsageKey, {
+      codex: { status: "unauthenticated" },
+    });
+
+    effects.handleChanged({
+      type: "changed",
+      entity: "thread",
+      id: "thr_1",
+      metadata: { eventTypes: ["item/completed"], projectId: "project-1" },
+      changes: ["events-appended"],
+    });
+    vi.advanceTimersByTime(50);
+    expect(queryClient.getQueryState(claudeUsageKey)?.isInvalidated).toBe(
+      false,
+    );
+
+    effects.handleChanged({
+      type: "changed",
+      entity: "thread",
+      id: "thr_1",
+      metadata: { eventTypes: ["turn/completed"], projectId: "project-1" },
+      changes: ["events-appended"],
+    });
+    vi.advanceTimersByTime(50);
+    expect(queryClient.getQueryState(claudeUsageKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(codexUsageKey)?.isInvalidated).toBe(false);
 
     effects.dispose();
   });
@@ -2007,6 +2049,34 @@ describe("createRealtimeCacheEffects", () => {
     effects.dispose();
   });
 
+  it("invalidates thread default execution options when an appended event includes a turn request", () => {
+    vi.useFakeTimers();
+    const { effects, queryClient } = createRealtimeEffectsTestContext();
+    const defaultOptionsKey = threadDefaultExecutionOptionsQueryKey("thr_1");
+    queryClient.setQueryData(defaultOptionsKey, {
+      model: "zai/glm-5.3",
+      permissionMode: "accept-edits",
+      reasoningLevel: "max",
+      serviceTier: "default",
+      source: "client/turn/requested",
+    });
+
+    effects.handleChanged({
+      type: "changed",
+      entity: "thread",
+      id: "thr_1",
+      metadata: { eventTypes: ["client/turn/requested"] },
+      changes: ["events-appended"],
+    });
+    vi.advanceTimersByTime(50);
+
+    expect(queryClient.getQueryState(defaultOptionsKey)?.isInvalidated).toBe(
+      true,
+    );
+
+    effects.dispose();
+  });
+
   it("invalidates queued messages and prompt history but not thread detail for queue changes", () => {
     vi.useFakeTimers();
     const { effects, queryClient } = createRealtimeEffectsTestContext();
@@ -2763,6 +2833,24 @@ describe("createRealtimeCacheEffects", () => {
     effects.dispose();
   });
 
+  it("resyncs the cached sidebar attention source after a reconnect", () => {
+    const { effects, queryClient } = createRealtimeEffectsTestContext();
+    const disconnectedAt = Date.now();
+    const sidebarNavigationKey = sidebarNavigationQueryKey();
+    queryClient.setQueryData(
+      sidebarNavigationKey,
+      { projects: [], personalProject: { threads: [] } },
+      { updatedAt: disconnectedAt - 1 },
+    );
+
+    effects.handleConnected({ reconnected: true, disconnectedAt });
+
+    expect(queryClient.getQueryState(sidebarNavigationKey)?.isInvalidated).toBe(
+      true,
+    );
+    effects.dispose();
+  });
+
   describe("while the document is hidden", () => {
     it("merges thread changes and flushes them once on visible", () => {
       vi.useFakeTimers();
@@ -2810,7 +2898,7 @@ describe("createRealtimeCacheEffects", () => {
       effects.dispose();
     });
 
-    it("refetches when a bare status-changed follows one that carried the row", () => {
+    it("patches hidden attention metadata immediately and still refetches after a bare status change", () => {
       vi.useFakeTimers();
       const visibility = createFakeVisibility();
       const { effects, queryClient } =
@@ -2849,6 +2937,19 @@ describe("createRealtimeCacheEffects", () => {
         },
         changes: ["status-changed"],
       });
+      expect(
+        queryClient.getQueryData<{
+          projects: { threads: (typeof idleRow)[] }[];
+        }>(sidebarNavigationKey)?.projects[0]?.threads[0],
+      ).toMatchObject({
+        id: "thr_1",
+        latestAttentionAt: 100,
+        status: "active",
+        updatedAt: 200,
+      });
+      expect(
+        queryClient.getQueryState(sidebarNavigationKey)?.isInvalidated,
+      ).toBe(false);
       effects.handleChanged({
         type: "changed",
         entity: "thread",
@@ -2861,10 +2962,118 @@ describe("createRealtimeCacheEffects", () => {
         queryClient.getQueryData<{
           projects: { threads: (typeof idleRow)[] }[];
         }>(sidebarNavigationKey)?.projects[0]?.threads[0],
-      ).toBe(idleRow);
+      ).toMatchObject({
+        id: "thr_1",
+        latestAttentionAt: 100,
+        status: "active",
+        updatedAt: 200,
+      });
       expect(
         queryClient.getQueryState(sidebarNavigationKey)?.isInvalidated,
       ).toBe(true);
+      effects.dispose();
+    });
+
+    it("patches a hidden pending interaction immediately without refetching", () => {
+      const visibility = createFakeVisibility();
+      const { effects, queryClient } =
+        createRealtimeEffectsTestContext(visibility);
+      const sidebarNavigationKey = sidebarNavigationQueryKey();
+      queryClient.setQueryData(sidebarNavigationKey, {
+        projects: [
+          {
+            threads: [
+              {
+                hasPendingInteraction: false,
+                id: "thr_1",
+              },
+            ],
+          },
+        ],
+        personalProject: { threads: [] },
+      });
+
+      visibility.setVisible(false);
+      effects.handleChanged({
+        type: "changed",
+        entity: "thread",
+        id: "thr_1",
+        metadata: {
+          hasPendingInteraction: true,
+          projectId: "project-1",
+        },
+        changes: ["interactions-changed"],
+      });
+
+      expect(
+        queryClient.getQueryData<{
+          projects: { threads: { hasPendingInteraction: boolean }[] }[];
+        }>(sidebarNavigationKey)?.projects[0]?.threads[0]
+          ?.hasPendingInteraction,
+      ).toBe(true);
+      expect(
+        queryClient.getQueryState(sidebarNavigationKey)?.isInvalidated,
+      ).toBe(false);
+      effects.dispose();
+    });
+
+    it("keeps hidden attention patches idempotent across repeated events", () => {
+      const visibility = createFakeVisibility();
+      const { effects, queryClient } =
+        createRealtimeEffectsTestContext(visibility);
+      const sidebarNavigationKey = sidebarNavigationQueryKey();
+      const idleRow = {
+        activity: NO_THREAD_ACTIVITY,
+        id: "thr_1",
+        latestAttentionAt: 100,
+        runtime: { displayStatus: "idle", hostReconnectGraceExpiresAt: null },
+        status: "idle",
+        updatedAt: 100,
+      };
+      queryClient.setQueryData(sidebarNavigationKey, {
+        projects: [{ threads: [idleRow] }],
+        personalProject: { threads: [] },
+      });
+
+      const emitStatusChange = () => {
+        effects.handleChanged({
+          type: "changed",
+          entity: "thread",
+          id: "thr_1",
+          metadata: {
+            projectId: "project-1",
+            statusChange: {
+              activity: NO_THREAD_ACTIVITY,
+              latestAttentionAt: 200,
+              runtime: {
+                displayStatus: "active",
+                hostReconnectGraceExpiresAt: null,
+              },
+              status: "active",
+              updatedAt: 200,
+            },
+          },
+          changes: ["status-changed"],
+        });
+      };
+
+      visibility.setVisible(false);
+      emitStatusChange();
+      emitStatusChange();
+
+      expect(
+        queryClient.getQueryData<{
+          projects: { threads: (typeof idleRow)[] }[];
+        }>(sidebarNavigationKey)?.projects[0]?.threads[0],
+      ).toMatchObject({
+        id: "thr_1",
+        latestAttentionAt: 200,
+        status: "active",
+        updatedAt: 200,
+      });
+      expect(
+        queryClient.getQueryState(sidebarNavigationKey)?.isInvalidated,
+      ).toBe(false);
       effects.dispose();
     });
 

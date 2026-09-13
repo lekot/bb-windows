@@ -65,6 +65,127 @@ async function registerThreadWithoutProviderThreadId(
 }
 
 describe("createAgentRuntime command contracts", () => {
+  it("resumes an original Claude identity without forking", async () => {
+    const { record, runtime } = createContractRuntime();
+    try {
+      const result = await runtime.startThread({
+        environmentId: "env-1", projectId: "p1", providerId: "claude-code",
+        threadId: "t-original", options: fullRuntimeOptions,
+        fork: { sourceProviderThreadId: "original-session", resumeOriginal: true },
+      });
+      expect(result.providerThreadId).toBe("original-session");
+      const requests = record.read();
+      expect(requests.some(entry => entry.method === "thread/resume" && entry.params?.providerThreadId === "original-session")).toBe(true);
+      expect(requests.some(entry => entry.method === "thread/resume" && entry.params?.resumeOriginal === true)).toBe(true);
+      expect(requests.some(entry => entry.method === "thread/fork" || entry.method === "thread/start")).toBe(false);
+    } finally { await runtime.shutdown(); }
+  });
+  it("keeps the original-session intent when the runtime restores a released session", async () => {
+    const { record, runtime } = createContractRuntime();
+    try {
+      await runtime.startThread({
+        environmentId: "env-1",
+        projectId: "p1",
+        providerId: "codex",
+        threadId: "t-reopen",
+        options: fullRuntimeOptions,
+        fork: {
+          sourceProviderThreadId: "original-session",
+          resumeOriginal: true,
+        },
+      });
+      await runtime.resumeThread({
+        environmentId: "env-1",
+        projectId: "p1",
+        providerId: "codex",
+        threadId: "t-reopen",
+        providerThreadId: "original-session",
+        options: fullRuntimeOptions,
+        nativeSession: {
+          resumeOriginal: true,
+          baselineExecution: {
+            model: fullRuntimeOptions.model,
+            permissionMode: fullRuntimeOptions.permissionMode,
+            reasoningLevel: fullRuntimeOptions.reasoningLevel,
+            serviceTier: fullRuntimeOptions.serviceTier,
+          },
+        },
+      });
+      const resumes = record
+        .read()
+        .filter((entry) => entry.method === "thread/resume");
+      expect(resumes).toHaveLength(2);
+      expect(resumes[1]?.params).toMatchObject({
+        providerThreadId: "original-session",
+        resumeOriginal: true,
+        nativeOverrides: {
+          model: false,
+          permissions: false,
+          reasoningLevel: false,
+          serviceTier: false,
+        },
+      });
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+
+  it("reports the fields the user changed while the session was released", async () => {
+    const { record, runtime } = createContractRuntime();
+    try {
+      await runtime.startThread({
+        environmentId: "env-1",
+        projectId: "p1",
+        providerId: "codex",
+        threadId: "t-changed",
+        options: fullRuntimeOptions,
+        fork: {
+          sourceProviderThreadId: "original-session",
+          resumeOriginal: true,
+        },
+      });
+      await runtime.resumeThread({
+        environmentId: "env-1",
+        projectId: "p1",
+        providerId: "codex",
+        threadId: "t-changed",
+        providerThreadId: "original-session",
+        options: {
+          ...fullRuntimeOptions,
+          model: "picked-by-user",
+          reasoningLevel: "high",
+          permissionMode: "accept-edits",
+          permissionScope: "workspace",
+          approvalReviewer: "user",
+          permissionEscalation: "ask",
+        },
+        nativeSession: {
+          resumeOriginal: true,
+          baselineExecution: {
+            model: fullRuntimeOptions.model,
+            permissionMode: fullRuntimeOptions.permissionMode,
+            reasoningLevel: fullRuntimeOptions.reasoningLevel,
+            serviceTier: fullRuntimeOptions.serviceTier,
+          },
+        },
+      });
+      const resumes = record
+        .read()
+        .filter((entry) => entry.method === "thread/resume");
+      expect(resumes[1]?.params).toMatchObject({
+        resumeOriginal: true,
+        nativeOverrides: {
+          model: true,
+          permissions: true,
+          reasoningLevel: true,
+          serviceTier: false,
+        },
+      });
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+
   let tmpDir: string;
 
   beforeEach(() => {

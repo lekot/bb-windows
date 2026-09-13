@@ -1,0 +1,22 @@
+{
+  "base": "267938526dfcbc0edb228ce827b5bec202c1af97",
+  "restoreUpstream": [
+    "plugins/tasks/", "plugins/taskboard/", "plugins/usage-tracker/",
+    "plugins/theme-preview/", "plugins/project-preflight/", "plugins/plugin-api-tester/",
+    "docs/handoff", "docs/glm-live-settings-acceptance.md",
+    "docs/native-integration-deployment-", "docs/native-session-acceptance-review.md",
+    "docs/status-pause-", "docs/task-native-sessions-",
+    "docs/windows-host-spike.md", "docs/windows-claude-original-resume.md",
+    "docs/windows-native-history-ui.md", "docs/windows-zcode-permissions-fix.md",
+    "docs/zcode-quota-source-notes.md",
+    "scripts/Get-ZCodeStatus.ps1", "scripts/glm-settings-acceptance.test.mjs",
+    "scripts/https-proxy.mjs", "scripts/setup-windows-tls.ps1",
+    "scripts/run-windows-spike.mjs", "scripts/start-windows-spike",
+    "scripts/sync-provider-builds.ps1", "scripts/windows-cli-probe.mjs",
+    "scripts/windows-codex-probe.mjs", "scripts/windows-zcode-",
+    "scripts/zcode-external-append-probe.mjs", "scripts/zcode-permission-write-probe.mjs",
+    "scripts/zcode-read-snapshot-probe.mjs", "scripts/zcode-roundtrip-client.mjs",
+    "scripts/zcode-steer-probe.mjs", "pc-pill-mobile-mockups.html",
+    "pc-widget-mockups.html", "sonnet-singularity.html"
+  ]
+}

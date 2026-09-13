@@ -21,9 +21,9 @@ describe("project-path", () => {
     expect(deriveProjectNameFromPath("/mnt/c/Users/michael/bb/")).toBe("bb");
   });
 
-  it("does not derive a project name from unsupported native Windows paths", () => {
-    expect(deriveProjectNameFromPath(windowsProjectPath)).toBe("");
-    expect(deriveProjectNameFromPath("C:/Users/michael/bb/")).toBe("");
+  it("derives Windows drive paths but rejects UNC paths", () => {
+    expect(deriveProjectNameFromPath(windowsProjectPath)).toBe("bb");
+    expect(deriveProjectNameFromPath("C:/Users/michael/bb/")).toBe("bb");
     expect(deriveProjectNameFromPath(uncProjectPath)).toBe("");
   });
 
@@ -35,7 +35,7 @@ describe("project-path", () => {
   it("recognizes supported absolute paths", () => {
     expect(isAbsoluteProjectPath("/srv/repos/bb")).toBe(true);
     expect(isAbsoluteProjectPath("/mnt/c/Users/michael/bb")).toBe(true);
-    expect(isAbsoluteProjectPath(windowsProjectPath)).toBe(false);
+    expect(isAbsoluteProjectPath(windowsProjectPath)).toBe(true);
     expect(isAbsoluteProjectPath(uncProjectPath)).toBe(false);
     expect(isAbsoluteProjectPath("C:Users\\michael\\bb")).toBe(false);
     expect(isAbsoluteProjectPath("relative/path")).toBe(false);
@@ -56,7 +56,7 @@ describe("project-path", () => {
     );
     expect(normalizeProjectPathInput("/")).toBe("/");
     expect(normalizeProjectPathInput(`${windowsProjectPath}\\`)).toBe(
-      `${windowsProjectPath}\\`,
+      windowsProjectPath,
     );
   });
 
@@ -71,8 +71,12 @@ describe("project-path", () => {
     expect(getProjectPathValidationMessage("relative/path")).toBe(
       INVALID_PROJECT_PATH_MESSAGE,
     );
-    expect(getProjectPathValidationMessage(windowsProjectPath)).toBe(
-      UNSUPPORTED_NATIVE_WINDOWS_PROJECT_PATH_MESSAGE,
+    expect(getProjectPathValidationMessage(windowsProjectPath)).toBeNull();
+    expect(getProjectPathValidationMessage(windowsRootPath)).toBe(
+      PROJECT_PATH_ROOT_MESSAGE,
+    );
+    expect(getProjectPathValidationMessage("C:relative")).toBe(
+      INVALID_PROJECT_PATH_MESSAGE,
     );
     expect(getProjectPathValidationMessage(uncProjectPath)).toBe(
       UNSUPPORTED_NATIVE_WINDOWS_PROJECT_PATH_MESSAGE,

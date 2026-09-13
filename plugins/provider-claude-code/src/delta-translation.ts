@@ -830,8 +830,15 @@ export function createClaudeDeltaTranslator(
       state.latestProviderCheckpointId = providerCheckpointId;
     }
     const requestContextTokens = extractClaudeRequestContextTokens(message);
-    if (requestContextTokens !== null) {
+    if (requestContextTokens !== null && parentToolCallId === undefined) {
       state.latestRequestContextTokens = requestContextTokens;
+      deltas.push({
+        kind: "contextWindow",
+        used: requestContextTokens,
+        size: state.selectedModelContextWindow,
+        estimated: true,
+        attach: "open",
+      });
     }
 
     for (const thinkingBlock of extractThinkingBlocks(message)) {

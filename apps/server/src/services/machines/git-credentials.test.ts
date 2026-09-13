@@ -129,18 +129,20 @@ describe("machine Git environment", () => {
     }
   });
 
-  it("clones a local bare repo through a fake HTTPS helper that requests Git credentials", async () => {
-    const { env, home } = await gitEnv();
-    const source = join(home, "source");
-    const bare = join(home, "private.git");
-    const helpers = join(home, "helpers");
-    await mkdir(helpers);
-    await exec("git", ["init", source], { env });
-    await writeFile(join(source, "gate.txt"), "private clone succeeded");
-    await exec("git", ["add", "."], { cwd: source, env });
-    await exec("git", ["commit", "-m", "seed"], { cwd: source, env });
-    await exec("git", ["clone", "--bare", source, bare], { env });
-    const helper = `#!/usr/bin/env python3
+  it.skipIf(process.platform === "win32")(
+    "clones a local bare repo through a fake HTTPS helper that requests Git credentials",
+    async () => {
+      const { env, home } = await gitEnv();
+      const source = join(home, "source");
+      const bare = join(home, "private.git");
+      const helpers = join(home, "helpers");
+      await mkdir(helpers);
+      await exec("git", ["init", source], { env });
+      await writeFile(join(source, "gate.txt"), "private clone succeeded");
+      await exec("git", ["add", "."], { cwd: source, env });
+      await exec("git", ["commit", "-m", "seed"], { cwd: source, env });
+      await exec("git", ["clone", "--bare", source, bare], { env });
+      const helper = `#!/usr/bin/env python3
 import os, subprocess, sys
 assert sys.argv[2] == "https://github.com/octocat/private.git"
 auth = subprocess.run(["git", "credential", "fill"], input="protocol=https\\nhost=github.com\\n\\n", text=True, capture_output=True, check=True).stdout
@@ -153,15 +155,22 @@ for line in sys.stdin:
         print("", flush=True)
         os.execlp("git", "git", "upload-pack", os.environ["FAKE_BARE"])
 `;
-    await writeFile(join(helpers, "git-remote-https"), helper, { mode: 0o755 });
-    const target = join(home, "cloned");
-    await exec("git", ["clone", "git@github.com:octocat/private.git", target], {
-      env: { ...env, GIT_EXEC_PATH: helpers, FAKE_BARE: bare },
-    });
-    expect(await readFile(join(target, "gate.txt"), "utf8")).toBe(
-      "private clone succeeded",
-    );
-  });
+      await writeFile(join(helpers, "git-remote-https"), helper, {
+        mode: 0o755,
+      });
+      const target = join(home, "cloned");
+      await exec(
+        "git",
+        ["clone", "git@github.com:octocat/private.git", target],
+        {
+          env: { ...env, GIT_EXEC_PATH: helpers, FAKE_BARE: bare },
+        },
+      );
+      expect(await readFile(join(target, "gate.txt"), "utf8")).toBe(
+        "private clone succeeded",
+      );
+    },
+  );
 
   it("rewrites both SSH forms without storing any Git configuration", async () => {
     const { env, home } = await gitEnv();

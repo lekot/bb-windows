@@ -90,6 +90,7 @@ import {
   createClaudeSkillPluginsRoot,
   ensureClaudeSkillPlugin,
 } from "./skill-plugins.js";
+import { readClaudeNativeSessionSettings } from "./native-settings.js";
 import {
   buildBridgeMcpServer,
   getAllowedToolNames,
@@ -195,6 +196,11 @@ interface ClaudeSessionPermissionGrantCoverageArgs {
   toolName: string;
 }
 
+type ClaudeSdkSessionState = Extract<
+  SDKMessage,
+  { type: "system"; subtype: "session_state_changed" }
+>["state"];
+
 interface ClaudeSessionRestart {
   reason: string;
   showRuntimeNote: boolean;
@@ -206,8 +212,11 @@ interface ThreadSession {
   attachment: ThreadAttachment;
   sessionSerial: number;
   closing: boolean;
+  pendingForwardedToolCalls: number;
+  pendingSessionCronIds: Set<string>;
   restartBeforeNextTurn: ClaudeSessionRestart | null;
   recoveryHintRaisedThisTurn: "authRequired" | "rateLimited" | null;
+  sdkSessionState: ClaudeSdkSessionState | undefined;
   streamEnded: boolean;
   translator: ClaudeDeltaTranslator;
   pendingInteractiveRequests: Map<string | number, PendingInteractiveRequest>;
@@ -226,10 +235,15 @@ interface ThreadAttachment {
   sessionOptions: SdkSessionOptions;
   closing: boolean;
   residentSession: ThreadSession | null;
+  idleTimer: ReturnType<typeof setTimeout> | null;
+  residencyGeneration: number;
+  wakePromise: Promise<ThreadSession | undefined> | null;
+  idleQueryReleaseEnabled: boolean;
   permissionEscalation: PermissionEscalation | null;
   permissionMode: ClaudePermissionMode;
   liveSettings: ClaudeLiveSessionSettings;
   approvedPlanPermissionMode: ClaudePermissionMode;
+  nativeRetention: ClaudeNativeRetention | null;
   providerThreadId?: string;
   sessionPermissionGrants: ClaudeSessionPermissionGrant[];
   threadIdRef: ThreadIdRef;
@@ -239,7 +253,9 @@ interface CreateThreadAttachmentArgs {
   permissionEscalation: PermissionEscalation | null;
   permissionMode: ClaudePermissionMode;
   liveSettings: ClaudeLiveSessionSettings;
+  idleQueryReleaseEnabled?: boolean;
   approvedPlanPermissionMode: ClaudePermissionMode;
+  nativeRetention?: ClaudeNativeRetention | null;
   providerThreadId?: string;
   sessionConstructionConfig: SessionConstructionConfig;
   sessionOptions: SdkSessionOptions;
@@ -261,6 +277,15 @@ interface SessionConstructionConfig {
     BuildSessionOptionsArgs,
     "memoryEnabled" | "model" | "reasoningLevel" | "workflowsEnabled"
   >;
+}
+
+interface ClaudeNativeRetention {
+  permissionMode?: ClaudePermissionMode;
+  requestedPermissionMode: ClaudePermissionMode;
+  model?: string;
+  reasoningLevel?: ReasoningLevel;
+  requestedModel?: string;
+  requestedReasoningLevel?: ReasoningLevel;
 }
 
 interface ClaudeLiveSessionSettings {
@@ -374,6 +399,7 @@ function requireSkillPluginsRoot(): string {
 }
 
 const THREAD_STOP_CLOSE_TIMEOUT_MS = 4_000;
+export const CLAUDE_IDLE_QUERY_GRACE_MS = 30_000;
 const CLAUDE_CHROME_SETTING_RESTART_REASON = "Claude in Chrome setting changed";
 
 const { send, sendResult, sendError } = createBridgeIo<
@@ -391,6 +417,90 @@ function resolvePendingSessionWork(
 ): void {
   toolCallTracker.resolvePendingToolCalls(threadSession, message);
   resolvePendingInteractiveRequests(threadSession, message);
+}
+
+function cancelIdleQueryRelease(attachment: ThreadAttachment): void {
+  attachment.residencyGeneration += 1;
+  if (attachment.idleTimer !== null) {
+    clearTimeout(attachment.idleTimer);
+    attachment.idleTimer = null;
+  }
+}
+
+function isThreadSessionQuiescent(
+  threadSession: ThreadSession,
+  threadId: string,
+): boolean {
+  return (
+    !threadSession.translator.hasOpenTurn(threadId) &&
+    threadSession.pendingForwardedToolCalls === 0 &&
+    threadSession.pendingInteractiveRequests.size === 0 &&
+    threadSession.pendingSessionCronIds.size === 0 &&
+    (threadSession.sdkSessionState === undefined ||
+      threadSession.sdkSessionState === "idle")
+  );
+}
+
+function scheduleIdleQueryRelease(
+  threadSession: ThreadSession,
+  threadId: string,
+): void {
+  const attachment = threadSession.attachment;
+  if (
+    attachment.closing ||
+    threadSession.closing ||
+    attachment.residentSession !== threadSession
+  ) {
+    return;
+  }
+  if (!attachment.idleQueryReleaseEnabled) {
+    cancelIdleQueryRelease(attachment);
+    return;
+  }
+  cancelIdleQueryRelease(attachment);
+  const generation = attachment.residencyGeneration;
+  attachment.idleTimer = setTimeout(() => {
+    attachment.idleTimer = null;
+    if (
+      attachment.closing ||
+      attachment.residencyGeneration !== generation ||
+      threadAttachments.get(threadId) !== attachment ||
+      attachment.residentSession !== threadSession ||
+      threadSession.closing
+    ) {
+      return;
+    }
+    if (!isThreadSessionQuiescent(threadSession, threadId)) {
+      scheduleIdleQueryRelease(threadSession, threadId);
+      return;
+    }
+    threadSession.closing = true;
+    attachment.residentSession = null;
+    attachment.residencyGeneration += 1;
+    threadSession.session.stop();
+  }, CLAUDE_IDLE_QUERY_GRACE_MS);
+}
+
+function refreshIdleQueryRelease(
+  threadSession: ThreadSession,
+  threadId: string,
+): void {
+  if (threadSession.attachment.idleTimer !== null) {
+    scheduleIdleQueryRelease(threadSession, threadId);
+  }
+}
+
+function applyIdleQueryReleaseSetting(
+  attachment: ThreadAttachment,
+  enabled: boolean | undefined,
+): void {
+  if (enabled === undefined || attachment.idleQueryReleaseEnabled === enabled) {
+    return;
+  }
+  attachment.idleQueryReleaseEnabled = enabled;
+  if (!enabled) {
+    cancelIdleQueryRelease(attachment);
+  }
 }
 
 function applyChromeSetting(
@@ -432,12 +542,16 @@ function createForwardToolCall(getThreadId: () => string): ToolCallForwarder {
         isError: true,
       });
     }
+    threadSession.pendingForwardedToolCalls += 1;
     return forwardToolCall({
       arguments: args,
       providerThreadId: attachment.providerThreadId ?? threadId,
       scope: threadSession,
       threadId,
       toolName,
+    }).finally(() => {
+      threadSession.pendingForwardedToolCalls -= 1;
+      refreshIdleQueryRelease(threadSession, threadId);
     });
   };
 }
@@ -458,6 +572,7 @@ async function closeThreadSession(args: {
   }
 
   attachment.closing = true;
+  cancelIdleQueryRelease(attachment);
   const threadSession = attachment.residentSession;
   if (threadSession) {
     threadSession.closing = true;
@@ -465,8 +580,15 @@ async function closeThreadSession(args: {
   }
   const closePromise = Promise.resolve()
     .then(async () => {
-      if (threadSession) {
-        await closeClaudeThreadSession(threadSession, args.graceful !== false);
+      await attachment.wakePromise;
+      const residentSession = attachment.residentSession;
+      if (residentSession) {
+        residentSession.closing = true;
+        resolvePendingSessionWork(residentSession, args.message);
+        await closeClaudeThreadSession(
+          residentSession,
+          args.graceful !== false,
+        );
       }
     })
     .finally(() => {
@@ -693,6 +815,9 @@ function emitForSession(
     if (delta.kind === "turn.boundary" || delta.kind === "session.reset") {
       threadSession.recoveryHintRaisedThisTurn = null;
     }
+    if (delta.kind === "turn.boundary") {
+      scheduleIdleQueryRelease(threadSession, threadId);
+    }
   }
 }
 
@@ -841,6 +966,104 @@ function toSessionConstructionConfig(
   };
 }
 
+class NativeResumeUnavailableError extends Error {}
+
+interface ResolvedNativeResume {
+  params: ThreadResumeParams;
+  retention: ClaudeNativeRetention | null;
+}
+
+function nativeResumeUnavailableMessage(
+  sessionId: string,
+  reason: string,
+): string {
+  return `bb cannot resume the original native Claude session ${sessionId} without changing it: ${reason}. Continue it in the client that created it, or start a bb thread with an explicit model, reasoning level and permission mode.`;
+}
+
+function resolveNativeResume(args: {
+  env: NodeJS.ProcessEnv;
+  params: ThreadResumeParams;
+  providerThreadId: string;
+}): ResolvedNativeResume {
+  const params = args.params;
+  if (params.resumeOriginal !== true) {
+    return { params, retention: null };
+  }
+  const overrides = params.nativeOverrides;
+  const retainModel = overrides?.model !== true;
+  const retainPermissions = overrides?.permissions !== true;
+  const retainReasoning = overrides?.reasoningLevel !== true;
+  if (!retainModel && !retainPermissions && !retainReasoning) {
+    return { params, retention: null };
+  }
+
+  const read = readClaudeNativeSessionSettings({
+    cwd: params.cwd,
+    env: args.env,
+    sessionId: args.providerThreadId,
+  });
+  if (read.kind === "unreadable") {
+    throw new NativeResumeUnavailableError(
+      nativeResumeUnavailableMessage(args.providerThreadId, read.reason),
+    );
+  }
+
+  const missing: string[] = [];
+  if (retainModel && read.settings.model === null) missing.push("model");
+  if (retainPermissions && read.settings.permissionMode === null) {
+    missing.push("permission mode");
+  }
+  if (retainReasoning && read.settings.effort === null) {
+    missing.push("reasoning effort");
+  }
+  if (missing.length > 0) {
+    throw new NativeResumeUnavailableError(
+      nativeResumeUnavailableMessage(
+        args.providerThreadId,
+        `its transcript records no ${missing.join(" or ")}`,
+      ),
+    );
+  }
+
+  const nativeModel = read.settings.model;
+  const nativeEffort = read.settings.effort;
+  const nativePermissionMode = read.settings.permissionMode;
+  const model =
+    retainModel && nativeModel !== null ? nativeModel : params.model;
+  const reasoningLevel: ReasoningLevel | undefined =
+    retainReasoning && nativeEffort !== null
+      ? nativeEffort
+      : params.reasoningLevel;
+  const permissionMode =
+    retainPermissions && nativePermissionMode !== null
+      ? nativePermissionMode
+      : params.permissionMode;
+
+  return {
+    params: {
+      ...params,
+      ...(model !== undefined ? { model } : {}),
+      ...(reasoningLevel !== undefined ? { reasoningLevel } : {}),
+      permissionMode,
+      approvedPlanPermissionMode: permissionMode,
+    },
+    retention: {
+      requestedPermissionMode: params.permissionMode,
+      ...(retainPermissions && nativePermissionMode !== null
+        ? { permissionMode: nativePermissionMode }
+        : {}),
+      ...(params.model === undefined ? {} : { requestedModel: params.model }),
+      ...(params.reasoningLevel === undefined
+        ? {}
+        : { requestedReasoningLevel: params.reasoningLevel }),
+      ...(retainModel && nativeModel !== null ? { model: nativeModel } : {}),
+      ...(retainReasoning && nativeEffort !== null
+        ? { reasoningLevel: nativeEffort }
+        : {}),
+    },
+  };
+}
+
 function toInitialLiveSessionSettings(
   params: SessionConstructionParams,
 ): ClaudeLiveSessionSettings {
@@ -858,9 +1081,27 @@ function toInitialLiveSessionSettings(
 function withTurnLiveSessionSettings(
   current: ClaudeLiveSessionSettings,
   params: TurnStartParams | TurnSteerParams,
+  retention: ClaudeNativeRetention | null,
 ): ClaudeLiveSessionSettings {
-  const model = params.model ?? current.model;
-  const reasoningLevel = params.reasoningLevel ?? current.reasoningLevel;
+  if (retention !== null) {
+    if (
+      params.model !== undefined &&
+      params.model !== retention.requestedModel
+    ) {
+      delete retention.model;
+    }
+    if (
+      params.reasoningLevel !== undefined &&
+      params.reasoningLevel !== retention.requestedReasoningLevel
+    ) {
+      delete retention.reasoningLevel;
+    }
+  }
+  const model = retention?.model ?? params.model ?? current.model;
+  const reasoningLevel =
+    retention?.reasoningLevel ??
+    params.reasoningLevel ??
+    current.reasoningLevel;
   return {
     memoryEnabled: params.memoryEnabled ?? current.memoryEnabled,
     ...(model !== undefined ? { model } : {}),
@@ -893,10 +1134,15 @@ function createThreadAttachment(
     sessionOptions: args.sessionOptions,
     closing: false,
     residentSession: null,
+    idleTimer: null,
+    residencyGeneration: 0,
+    wakePromise: null,
+    idleQueryReleaseEnabled: args.idleQueryReleaseEnabled ?? false,
     permissionEscalation: args.permissionEscalation,
     permissionMode: args.permissionMode,
     liveSettings: args.liveSettings,
     approvedPlanPermissionMode: args.approvedPlanPermissionMode,
+    nativeRetention: args.nativeRetention ?? null,
     ...(args.providerThreadId
       ? { providerThreadId: args.providerThreadId }
       : {}),
@@ -939,8 +1185,11 @@ function createThreadSession(attachment: ThreadAttachment): ThreadSession {
     attachment,
     sessionSerial,
     closing: false,
+    pendingForwardedToolCalls: 0,
+    pendingSessionCronIds: new Set(),
     restartBeforeNextTurn: null,
     recoveryHintRaisedThisTurn: null,
+    sdkSessionState: undefined,
     streamEnded: false,
     translator,
     pendingInteractiveRequests: new Map(),
@@ -1179,12 +1428,29 @@ function buildSessionTrackingHooks(
     return { continue: true };
   };
 
+  const trackSessionCrons: HookCallback = async (input) => {
+    if (input.hook_event_name !== "Stop" || input.session_crons === undefined) {
+      return { continue: true };
+    }
+    const threadSession = threadAttachments.get(
+      threadIdRef.current,
+    )?.residentSession;
+    if (threadSession) {
+      threadSession.pendingSessionCronIds = new Set(
+        input.session_crons.map((cron) => cron.id),
+      );
+      refreshIdleQueryRelease(threadSession, threadIdRef.current);
+    }
+    return { continue: true };
+  };
+
   return {
     PermissionDenied: [{ hooks: [clearToolUse] }],
     PermissionRequest: [{ hooks: [trackPermissionRequest] }],
     PostToolUse: [{ hooks: [clearToolUse] }],
     PostToolUseFailure: [{ hooks: [clearToolUse] }],
     PreToolUse: [{ hooks: [trackPreToolUse] }],
+    Stop: [{ hooks: [trackSessionCrons] }],
     SubagentStart: [{ hooks: [trackSubagentStart] }],
     SubagentStop: [{ hooks: [clearSubagent] }],
   };
@@ -1255,11 +1521,20 @@ async function getWritableThreadSession(
   if (!attachment || attachment.closing) {
     return undefined;
   }
-  const threadSession = attachment.residentSession;
-  if (!threadSession) {
-    return undefined;
+  cancelIdleQueryRelease(attachment);
+
+  const existingWake = attachment.wakePromise;
+  if (existingWake) {
+    return existingWake;
   }
-  const replacement: ClaudeSessionRestart | null = threadSession.streamEnded
+
+  const threadSession = attachment.residentSession;
+  const replacement: ClaudeSessionRestart | null = !threadSession
+    ? {
+        reason: "Claude query resumed after idle release",
+        showRuntimeNote: false,
+      }
+    : threadSession.streamEnded
       ? {
           reason: "Thread session replaced after Claude SDK stream ended",
           showRuntimeNote: false,
@@ -1267,15 +1542,69 @@ async function getWritableThreadSession(
       : intent === "new-turn"
         ? threadSession.restartBeforeNextTurn
         : null;
-  if (replacement === null) {
+  if (threadSession && replacement === null) {
     return threadSession;
   }
-  return replaceThreadSessionBeforeNextTurn({
-    attachment,
-    restart: replacement,
-    threadId,
-    threadSession,
+
+  if (!threadSession && intent === "steer") {
+    return undefined;
+  }
+
+  const wakePromise = Promise.resolve().then(() => {
+    if (attachment.closing || threadAttachments.get(threadId) !== attachment) {
+      return undefined;
+    }
+
+    const currentSession = attachment.residentSession;
+    if (currentSession) {
+      const currentRestart: ClaudeSessionRestart | null =
+        currentSession.streamEnded
+          ? {
+              reason: "Thread session replaced after Claude SDK stream ended",
+              showRuntimeNote: false,
+            }
+          : intent === "new-turn"
+            ? currentSession.restartBeforeNextTurn
+            : null;
+      return currentRestart === null
+        ? currentSession
+        : replaceThreadSessionBeforeNextTurn({
+            attachment,
+            restart: currentRestart,
+            threadId,
+            threadSession: currentSession,
+          });
+    }
+
+    const providerThreadId = attachment.providerThreadId;
+    if (!providerThreadId) {
+      return undefined;
+    }
+    const replacementSession = createThreadSession(attachment);
+    attachment.residentSession = replacementSession;
+    startResidentThreadSession(attachment, providerThreadId);
+    send({
+      jsonrpc: "2.0",
+      method: BRIDGE_NOTIFICATION_METHODS.sessionReplaced,
+      params: {
+        threadId,
+        providerThreadId,
+        reason: "Claude query resumed after idle release",
+        contextLost: false,
+      },
+    });
+    sendThreadIdentity(threadId, providerThreadId);
+    sendSessionReset(threadId);
+    return replacementSession;
   });
+  attachment.wakePromise = wakePromise;
+  try {
+    return await wakePromise;
+  } finally {
+    if (attachment.wakePromise === wakePromise) {
+      attachment.wakePromise = null;
+    }
+  }
 }
 
 function getAuthenticationFailureRestartReason(
@@ -1341,6 +1670,12 @@ function createOnSdkMessage(
       };
     }
     trackSdkAssistantPermissionEscalation(threadSession, message);
+    if (
+      message.type === "system" &&
+      message.subtype === "session_state_changed"
+    ) {
+      threadSession.sdkSessionState = message.state;
+    }
     emitForSession(threadSession, args.threadIdRef.current, "sdk/message", {
       threadId: args.threadIdRef.current,
       message,
@@ -1391,6 +1726,7 @@ function createOnSdkMessage(
         getAssistantMessageErrorText(message),
       );
     }
+    refreshIdleQueryRelease(threadSession, args.threadIdRef.current);
   };
 }
 
@@ -1662,6 +1998,7 @@ function createForwardInteractiveRequest(
       const finish = (result: PermissionResult): void => {
         args.signal.removeEventListener("abort", onAbort);
         resolve(result);
+        refreshIdleQueryRelease(threadSession, threadIdRef.current);
       };
 
       const onAbort = (): void => {
@@ -1726,6 +2063,7 @@ function createForwardUserQuestionRequest(
       const finish = (result: PermissionResult): void => {
         args.signal.removeEventListener("abort", onAbort);
         resolve(result);
+        refreshIdleQueryRelease(threadSession, threadIdRef.current);
       };
 
       const onAbort = (): void => {
@@ -1764,10 +2102,46 @@ function createForwardUserQuestionRequest(
     });
 }
 
-async function enterPlanModeIfRequested(
+async function applyTurnPermissionMode(
   threadSession: ThreadSession,
   params: TurnStartParams | TurnSteerParams,
 ): Promise<void> {
+  if (
+    params.claudeCodePermissionMode !== "plan" &&
+    params.permissionMode !== undefined
+  ) {
+    const attachment = threadSession.attachment;
+    const retention = attachment.nativeRetention;
+    if (
+      retention !== null &&
+      params.permissionMode !== retention.requestedPermissionMode
+    ) {
+      delete retention.permissionMode;
+    }
+    const mode = retention?.permissionMode ?? params.permissionMode;
+    if (
+      attachment.permissionMode === "plan" &&
+      mode === attachment.approvedPlanPermissionMode
+    )
+      return;
+    if (attachment.permissionMode !== mode) {
+      await threadSession.session.setPermissionMode(mode);
+      attachment.permissionMode = mode;
+      attachment.approvedPlanPermissionMode = mode;
+      attachment.sessionOptions = {
+        ...attachment.sessionOptions,
+        permissionMode: mode,
+      };
+      attachment.sessionConstructionConfig = {
+        ...attachment.sessionConstructionConfig,
+        sessionOptions: {
+          ...attachment.sessionConstructionConfig.sessionOptions,
+          permissionMode: mode,
+        },
+      };
+    }
+    return;
+  }
   if (
     params.claudeCodePermissionMode !== "plan" ||
     threadSession.attachment.permissionMode === "plan"
@@ -1925,7 +2299,10 @@ function createCanUseTool(threadIdRef: ThreadIdRef): CanUseTool {
       };
     }
 
-    if (shouldAutoDenyInteractiveRequest(interactiveRequestPolicy)) {
+    if (
+      shouldAutoDenyInteractiveRequest(interactiveRequestPolicy) ||
+      threadSession.attachment.permissionMode === "dontAsk"
+    ) {
       const policyMessage =
         threadSession.attachment.permissionMode === "acceptEdits" ||
         threadSession.attachment.permissionMode === "auto"
@@ -2005,6 +2382,12 @@ async function handleRequest(request: ClaudeCodeJsonRpcRequest): Promise<void> {
         claudeThreadResumeParamsSchema.parse({
           ...toClaudeSessionParams(request.params),
           providerThreadId: request.params.providerThreadId,
+          ...(request.params.resumeOriginal === true
+            ? { resumeOriginal: true }
+            : {}),
+          ...(request.params.nativeOverrides !== undefined
+            ? { nativeOverrides: request.params.nativeOverrides }
+            : {}),
         }),
       );
       break;
@@ -2047,6 +2430,10 @@ function attachThreadSession(
   params: SessionConstructionParams,
   providerThreadId: string,
   resume: boolean,
+  native?: {
+    idleQueryReleaseEnabled?: boolean;
+    nativeRetention?: ClaudeNativeRetention | null;
+  },
 ): void {
   const threadIdRef = { current: params.threadId };
   const env = buildSessionEnv(readConfigEnvOverrides(params.config));
@@ -2073,8 +2460,12 @@ function attachThreadSession(
     sessionConstructionConfig: toSessionConstructionConfig(params),
     sessionOptions,
     threadIdRef,
+    ...(native?.nativeRetention !== undefined
+      ? { nativeRetention: native.nativeRetention }
+      : {}),
   });
   threadAttachments.set(params.threadId, attachment);
+  applyIdleQueryReleaseSetting(attachment, native?.idleQueryReleaseEnabled);
   startResidentThreadSession(attachment, resume ? providerThreadId : undefined);
 
   sendThreadIdentity(params.threadId, providerThreadId);
@@ -2112,7 +2503,23 @@ async function handleThreadResume(
     );
     return;
   }
-  const sessionConstructionConfig = toSessionConstructionConfig(params);
+  const env = buildSessionEnv(readConfigEnvOverrides(params.config));
+  let resolved: ResolvedNativeResume;
+  try {
+    resolved = resolveNativeResume({
+      env,
+      params,
+      providerThreadId: requestedProviderThreadId,
+    });
+  } catch (error) {
+    if (error instanceof NativeResumeUnavailableError) {
+      sendError(id, BRIDGE_JSON_RPC_ERRORS.INVALID_PARAMS, error.message);
+      return;
+    }
+    throw error;
+  }
+  const resumeParams = resolved.params;
+  const sessionConstructionConfig = toSessionConstructionConfig(resumeParams);
 
   const existing = threadAttachments.get(threadId);
   const existingSession = existing?.residentSession;
@@ -2127,7 +2534,12 @@ async function handleThreadResume(
       sessionConstructionConfig,
     )
   ) {
-    const liveSettings = toInitialLiveSessionSettings(params);
+    const liveSettings = toInitialLiveSessionSettings(resumeParams);
+    existing.nativeRetention = resolved.retention;
+    applyIdleQueryReleaseSetting(
+      existing,
+      resumeParams.idleQueryReleaseEnabled,
+    );
     if (existingSession) {
       await applyLiveSessionSettings(
         existingSession,
@@ -2135,7 +2547,7 @@ async function handleThreadResume(
         liveSettings,
       );
     }
-    existing.permissionEscalation = params.permissionEscalation;
+    existing.permissionEscalation = resumeParams.permissionEscalation;
     sendResult(id, {
       providerThreadId: requestedProviderThreadId,
       sessionRestorable: true,
@@ -2160,7 +2572,10 @@ async function handleThreadResume(
     });
   }
 
-  attachThreadSession(id, params, requestedProviderThreadId, true);
+  attachThreadSession(id, resumeParams, requestedProviderThreadId, true, {
+    idleQueryReleaseEnabled: resumeParams.idleQueryReleaseEnabled,
+    nativeRetention: resolved.retention,
+  });
 }
 
 async function handleThreadFork(
@@ -2223,6 +2638,7 @@ async function runTurnInput(
 
   const attachment = threadAttachments.get(params.threadId);
   if (attachment) {
+    applyIdleQueryReleaseSetting(attachment, params.idleQueryReleaseEnabled);
     if ("config" in params) {
       applyTurnEnvironment(attachment, params.config);
     }
@@ -2246,9 +2662,10 @@ async function runTurnInput(
       withTurnLiveSessionSettings(
         threadSession.attachment.liveSettings,
         params,
+        threadSession.attachment.nativeRetention,
       ),
     );
-    await enterPlanModeIfRequested(threadSession, params);
+    await applyTurnPermissionMode(threadSession, params);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     sendError(id, -32000, message);
