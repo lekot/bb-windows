@@ -90,10 +90,14 @@ test("proxies ACP lines and emits usage for the matching prompt session", async 
   const fake = join(root, "fake-agent.mjs");
   await copyFile(join(process.cwd(), "test/fixtures/fake-agent.mjs"), fake);
   await chmod(fake, 0o755);
-  const child = spawn(wrapper, [], {
-    env: { ...process.env, ANTIGRAVITY_REAL_SERVER_PATH: fake, GEMINI_HOME: geminiHome },
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  const child = spawn(
+    process.platform === "win32" ? process.execPath : wrapper,
+    process.platform === "win32" ? [wrapper] : [],
+    {
+      env: { ...process.env, ANTIGRAVITY_REAL_SERVER_PATH: fake, GEMINI_HOME: geminiHome },
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
   const collector = collectLines(child);
   child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1, clientCapabilities: {} } }) + "\r\n");
   child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "session/new", params: {} }) + "\r\n");
@@ -158,10 +162,14 @@ test("emits usage when the server omits cached-token field 5", async () => {
   const fake = join(root, "fake-agent.mjs");
   await copyFile(join(process.cwd(), "test/fixtures/fake-agent.mjs"), fake);
   await chmod(fake, 0o755);
-  const child = spawn(wrapper, [], {
-    env: { ...process.env, ANTIGRAVITY_REAL_SERVER_PATH: fake, GEMINI_HOME: geminiHome },
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  const child = spawn(
+    process.platform === "win32" ? process.execPath : wrapper,
+    process.platform === "win32" ? [wrapper] : [],
+    {
+      env: { ...process.env, ANTIGRAVITY_REAL_SERVER_PATH: fake, GEMINI_HOME: geminiHome },
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
   const collector = collectLines(child);
   child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1, clientCapabilities: {} } }) + "\r\n");
   child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "session/new", params: {} }) + "\r\n");

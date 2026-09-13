@@ -181,7 +181,10 @@ function main() {
   // Linux builds segfault without --uid=; the launch spec may come from a machine that never saw the registry args, so ensure it here.
   const childArgs = process.argv.slice(2);
   if (process.platform === "linux" && !childArgs.includes("--uid=")) childArgs.push("--uid=");
-  const child = spawn(realBin, childArgs, {
+  const isScript = process.platform === "win32" && (realBin.endsWith(".mjs") || realBin.endsWith(".js"));
+  const spawnBin = isScript ? process.execPath : realBin;
+  const spawnArgs = isScript ? [realBin, ...childArgs] : childArgs;
+  const child = spawn(spawnBin, spawnArgs, {
     stdio: ["pipe", "pipe", "inherit"],
     env: process.env,
   });
