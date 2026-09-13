@@ -1,42 +1,41 @@
-# ACP providers
+# Провайдеры ACP
 
-First-party plugin for ACP (Agent Client Protocol) agent providers: Cursor,
-opencode, omp, Grok Build and Hermes Agent.
+Плагин подключает агентов по Agent Client Protocol. В Windows-форке основные дополнительные маршруты — **ZCode/GLM**, **DeepSeek через OpenCode** и **DeepSeek Harness**. В коде также остаются другие определения upstream, например Cursor, omp, Grok Build и Hermes Agent; они не входят в перечень проверенных Windows-маршрутов.
 
-The plugin has no bridge of its own. Every agent it registers runs on the
-published ACP kit, `@get-bb/plugin-sdk/provider-bridge/acp`, which its
-`bb.host` entry re-exports (`src/host.ts`). That is the whole
-point of the kit: a third-party plugin adds an ACP agent exactly the way this
-one does, with no bb-side code, and `public-sdk-only.test.ts` proves this
-plugin takes no shortcut — no file here may import a private `@bb/*` package.
+[Настройка провайдеров и личной авторизации](../../README.windows.md#providers-and-credentials). [Особенности ZCode](../../docs/windows-zcode.md).
 
-What lives here:
+## Пользовательский агент
 
-- `server.ts` — the plugin's runtime: it reconciles one registration per
-  agent, from the shipped list (`src/known-agents.ts`) plus whatever the
-  `customAgents` setting and the deprecated `customAcpAgents` config array
-  declare.
-- `src/agents.ts` — the agent definition and the setting's schema, built out
-  of the kit's own launch-spec schema so what the setting accepts is exactly
-  what the bridge parses. The setting itself is a multi-line JSON field
-  (`experimental_multiline`) whose description stays at two sentences; the
-  field reference — required and optional fields, the replacement rule for a
-  shipped agent's id, the `acp-<id>` provider id — is the "Custom ACP Agents"
-  chapter of `docs/configuration.md`.
-- `src/configured-agents.ts` — merging the setting and the deprecated config
-  array, with the setting winning on a shared id.
-- `src/declaration.ts` — one agent definition becomes one
-  `bb.providers.register` declaration: ids, display names, icons,
-  capabilities, and the bridge options it launches with (`acpLaunchSpec`, and
-  `acpDialect` for the agents whose vendor side channels the kit reads).
-- `src/legacy-config.ts` — reading the deprecated config array. Dies with the
-  deprecation window.
-- `src/host.ts` — the `bb.host` artifact, two surfaces in one file: the kit's
-  bridge, re-exported, and a host entry whose one RPC asks an agent what it
-  supports on the machine it is installed on (`src/contract.ts`,
-  `src/probe-capabilities.ts`).
-- `icons/` — the provider logos, declared in `package.json` under
-  `bb.branding.experimental_icons` so the packaged build ships them.
+Настройка `customAgents` содержит JSON-массив. Обязательные поля записи: `id`, `displayName`, `command`. Обычно также задаются `args` и `env`. Провайдер получает ID `acp-<id>`; например `id: "zcode"` создаёт `acp-zcode`.
 
-The kit itself, including the ACP wire schema, the delta translation, the
-per-agent dialects and the bridge process, is `packages/provider-bridge-acp`.
+```powershell
+bb plugin config provider-acp
+bb provider list --json
+```
+
+[Готовая регистрация ZCode для Windows](../../README.windows.md#zcode--glm) строит пути из каталога проекта и переменных окружения. Не добавляйте в примеры реальные ключи или чужие пути.
+
+Список `customAgents` имеет приоритет над устаревшим массивом `customAcpAgents` при совпадении ID. Запись с ID поставляемого агента переопределяет его настройку; сверяйте схему перед изменением. Полный список полей определяется `customAcpAgentSchema` в `src/agents.ts`.
+
+## Устройство плагина
+
+Все агенты используют публичный набор `@get-bb/plugin-sdk/provider-bridge/acp`; собственного альтернативного моста здесь нет. `public-sdk-only.test.ts` проверяет отсутствие импортов приватных пакетов `@bb/*`.
+
+- `server.ts` согласует регистрации поставляемых и пользовательских агентов.
+- `src/known-agents.ts` содержит определения поставляемых агентов.
+- `src/agents.ts` задаёт схему агента на основе схемы запуска ACP-набора.
+- `src/configured-agents.ts` объединяет актуальные и прежние настройки.
+- `src/declaration.ts` создаёт регистрацию `bb.providers.register`: ID, название, значок, возможности и параметры запуска `acpLaunchSpec`/`acpDialect`.
+- `src/legacy-config.ts` читает устаревшую конфигурацию.
+- `src/host.ts` экспортирует ACP-мост и RPC проверки возможностей установленного агента; контракт и проверка находятся в `src/contract.ts` и `src/probe-capabilities.ts`.
+- `icons/` содержит значки, объявленные через `bb.branding.experimental_icons` для упаковки.
+
+Реализация ACP-протокола, преобразование событий и особенности отдельных агентов находятся в `packages/provider-bridge-acp`.
+
+## Проверка изменений
+
+```powershell
+pnpm exec turbo run typecheck test --filter=bb-plugin-provider-acp
+```
+
+После обновления провайдера выполните также реальную проверку [создания тредов](../../README.windows.md#verify). Успешная проверка наличия исполняемого файла не подтверждает авторизацию или ответ модели.

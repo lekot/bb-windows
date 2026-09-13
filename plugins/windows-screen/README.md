@@ -1,13 +1,34 @@
 # Windows Screen
 
-Bundled Windows plugin. For source development, install from the checkout with `bb plugin install path:./plugins/windows-screen --yes`.
+Встроенный плагин снимков экрана Windows. Для разработки из исходников его можно установить командой:
 
-Latest screenshots are stored in the plugin SQLite database, not the 256 KiB-limited KV store. Legacy KV screenshots remain readable until replaced by a new capture.
+```powershell
+bb plugin install path:./plugins/windows-screen --yes
+```
 
-Click the preview to open a separate browser window with fit, 100%, and zoom controls (up to 400%). Browsers may show it as a tab or require popup permission. This enlarges the saved image, not the capture resolution.
+## Снимок из интерфейса
 
-In a session's right-panel add menu select **Скриншот ПК** and click the capture button. No automatic capture. Monitor 0 is primary; other indices follow Windows enumeration. The host needs an unlocked interactive desktop. Locked/unavailable desktops return an error; no unlock or login is attempted.
+В треде откройте новую правую вкладку → **Скриншот ПК**, выберите монитор и нажмите кнопку снимка. Автоматического захвата нет. Монитор 0 — основной, остальные номера соответствуют перечислению Windows.
 
-Agent tool: `CaptureWindowsScreen({monitor: 0})`, returning JPEG content. CLI: `bb windows-screen capture <thread-id> [monitor-index] --json`. SDK: `sdk.plugins.callRpc({pluginId: "windows-screen", method: "capture", input: {threadId, monitor: 0}, outputSchema: shotSchema})`; RPC `latest` takes `{threadId}`. Host is resolved from the session environment, never from the browser device.
+Снимается экран **хоста рабочей среды треда**, а не компьютера, на котором открыт браузер. Нужен доступный разблокированный рабочий стол. Плагин не выполняет вход и не снимает блокировку; при недоступном столе возвращается ошибка.
 
-Maximum image edge 1600 pixels, 20-second process timeout, one capture at a time per host worker. Only the latest image per thread is retained in plugin storage; agent tool output may also be retained in conversation history. No video, mouse or keyboard actions. Screenshots can contain sensitive information and are available to everyone with access to the BB instance. Uninstall/disable stops new requests, not copies already saved by clients.
+Нажатие предпросмотра открывает отдельное окно или вкладку: вписать изображение, 100% или увеличение до 400%. Браузер может запросить разрешение на всплывающее окно. Увеличивается сохранённый снимок, а не разрешение захвата.
+
+## CLI, инструмент агента и SDK
+
+```powershell
+bb windows-screen capture <thread-id> [monitor-index] --json
+```
+
+Замените `<thread-id>` на ID треда; необязательный `[monitor-index]` — на номер монитора. Инструмент агента `CaptureWindowsScreen({monitor: 0})` возвращает JPEG.
+
+В SDK используется `sdk.plugins.callRpc({pluginId: "windows-screen", method: "capture", input: {threadId, monitor: 0}, outputSchema: shotSchema})`. Метод RPC `latest` принимает `{threadId}` и возвращает последний снимок.
+
+## Хранение и ограничения
+
+- Максимальная сторона — 1600 пикселей, тайм-аут процесса — 20 секунд; на одном host-worker выполняется один захват за раз.
+- Последний снимок каждого треда хранится в SQLite плагина. Старые записи KV читаются до замены новым снимком; ограничение KV 256 КиБ больше не ограничивает новые изображения.
+- Результат инструмента агента может дополнительно сохраниться в истории разговора.
+- Видео, управление мышью и клавиатурой не поддерживаются.
+- Снимок может содержать личные данные; он доступен всем, у кого есть доступ к экземпляру bb. Не публикуйте тестовые снимки и базы.
+- Отключение или удаление плагина прекращает новые запросы, но не удаляет копии, уже сохранённые клиентами.

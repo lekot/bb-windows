@@ -1,27 +1,23 @@
 # Workspace Explorer
 
-Browse the current thread's workspace files in the thread's right panel.
+Просмотр файлов рабочей среды текущего треда в правой панели.
 
-Open the **Explorer** tab next to the thread panel actions. The root is the
-working folder of the thread's own environment on its host — not a Tasks
-project and not the attachment storage. Folders expand in place with a lazy
-listing of their immediate children; clicking a file opens it in bb's standard
-preview (monaco editor, PDF, images, depending on the installed file openers).
+Откройте новую правую вкладку и выберите **Explorer**. Корень дерева — рабочая папка среды треда на её хосте. Каталоги раскрываются с загрузкой непосредственных дочерних элементов. Нажатие файла открывает штатный просмотрщик bb: Monaco, PDF или изображение, в зависимости от установленных обработчиков.
 
-Threads without an environment workspace show an explanation instead of a
-guess. The tree is read-only: no editing, creating, deleting, or uploading.
-Switching threads resets the tree.
+Если у треда нет рабочей среды, панель показывает объяснение. Дерево предназначено только для чтения: создание, удаление, редактирование и загрузка файлов через него не выполняются. При смене треда дерево сбрасывается.
 
-Agents read the same information through existing commands (verified against
-`--help`):
+## CLI и SDK
 
-```sh
-bb thread show --self --json          # thread.environmentId of the current thread
-bb environment show <env-id> --json   # workspace path and host of the environment
-bb environment paths <env-id> --directories --files [--query <q>] [--json]
-                                      # search the environment's files (recursive index)
-bb file read <path>                   # file contents on the BB machine
+Сначала получите среду текущего треда, затем её путь и хост:
+
+```powershell
+bb thread show --self --json
+bb environment show <env-id> --json
+bb environment paths <env-id> --directories --files --json
+bb environment paths <env-id> --directories --files --query <q> --json
+bb file read <path>
 ```
 
-The plugin adds no commands of its own. Plugin servers reach the same data via
-`bb.sdk.threads.get`, `bb.sdk.environments.get`, and `bb.sdk.hosts.directory`.
+`<env-id>` берётся из `thread.environmentId`; `<q>` — поисковая строка, `<path>` — путь к читаемому файлу на машине bb. Поиск использует рекурсивный индекс среды.
+
+Собственных CLI-команд плагин не добавляет. На стороне плагинов те же сведения доступны через `bb.sdk.threads.get`, `bb.sdk.environments.get` и `bb.sdk.hosts.directory`.
