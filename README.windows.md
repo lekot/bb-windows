@@ -1,6 +1,6 @@
 # BB for Windows
 
-**Release candidate under verification; not yet approved for distribution.**
+**Public preview: verified on the development Windows PC; clean-machine acceptance is pending.**
 The current acceptance record is [Windows fork audit](docs/windows-fork-audit.md).
 This source distribution targets Windows x64 without WSL. It runs the web app,
 server and host-daemon; it does not package the upstream Electron desktop app.
@@ -11,7 +11,7 @@ Install Git, PowerShell 7, Node.js 22.19 or newer and the repository-pinned pnpm
 
 ```powershell
 npm install --global pnpm@9.15.0
-git clone <APPROVED_FORK_URL> bb-windows
+git clone https://github.com/zr54211/bb-windows.git bb-windows
 cd bb-windows
 pwsh -NoProfile -File scripts/windows/check.ps1
 pwsh -NoProfile -File scripts/windows/install.ps1
@@ -185,14 +185,14 @@ Resolve conflicts, review the daemon protocol version and migrations, run the
 build/tests and Windows acceptance checks, then merge the reviewed integration
 branch into the fork. Do not rebase shared history or force-push.
 
-Create a separate private fork repository only after release and historical
-secret review. The current checkout's `origin` is not the distribution URL.
+The public preview repository is https://github.com/zr54211/bb-windows. Complete release and historical
+secret review before marking a stable release. The maintenance checkout's `origin` is not the distribution URL.
 Publishing Git history also publishes deleted files; exclusions from the current
 bundle cannot sanitize historical personal documents or credentials. No publish
 or push command is part of these scripts.
 
-The local `release/windows-candidate` branch has upstream ancestry without the
-old private fork commits. `main` remains the original maintenance history and
+The published `main` comes from local `release/windows-candidate` and has upstream ancestry without the
+old private fork commits. The original maintenance checkout's `main` remains its private history and
 must not be used as the initial publication source. To prepare another snapshot
 from committed maintenance changes, choose a new branch name:
 

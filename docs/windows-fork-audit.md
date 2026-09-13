@@ -147,7 +147,7 @@ certificates. No tracked runtime DB/log was found or added.
 
 Only the release branch is suitable as the basis of a new repository; do not
 push `main`, all refs or the ignored runtime directories. Nothing was published,
-pushed, force-pushed or rebased.
+pushed, force-pushed or rebased during that preparation phase.
 
 ## Known limitations and remaining acceptance
 
@@ -170,6 +170,6 @@ pushed, force-pushed or rebased.
   migrations rather than editing snapshots. The documented merge workflow
   preserves ancestry; it does not promise conflict-free upstream updates.
 
-Release gate: finish the clean-machine and fresh-adapter checks, review any
-remaining private material and the distribution scope, then obtain explicit
-authorization to create/publish a separate repository.
+Stable-release gate: finish the clean-machine and fresh-adapter checks, review any
+remaining private material and the distribution scope. The user subsequently gave explicit
+authorization to publish the sanitized candidate as a public preview at https://github.com/zr54211/bb-windows. This does not upgrade the unexecuted checks to passes.

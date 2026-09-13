@@ -1,3 +1,25 @@
+# BB for Windows — public preview
+
+Native Windows fork of [get-bb/bb](https://github.com/get-bb/bb), without WSL.
+Start with the [Windows installation, providers and update guide](README.windows.md).
+
+```powershell
+git clone https://github.com/zr54211/bb-windows.git bb-windows
+cd bb-windows
+pwsh -NoProfile -File scripts/windows/install.ps1
+pwsh -NoProfile -File scripts/windows/bb.ps1 -Action Start
+```
+
+Prerequisites: Windows x64, PowerShell 7, Git, Node.js 22.19+ and pnpm 9.15.0.
+Open http://127.0.0.1:38886. Each user supplies their own provider credentials.
+This is a source preview, not a signed Windows installer or the upstream npm release.
+See the [verification results and remaining limitations](docs/windows-fork-audit.md#known-limitations-and-remaining-acceptance).
+Upstream GitHub Actions are disabled in this repository pending a dedicated Windows CI workflow.
+
+The upstream overview follows; its npm packages, screenshots and hosted services
+refer to upstream, not to this Windows distribution.
+
+---
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/e40bda56-54a4-47f8-a417-6bbadf2e5b40">
