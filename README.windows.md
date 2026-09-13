@@ -75,6 +75,16 @@ on PATH unless `BB_DEEPSEEK_HARNESS_EXECUTABLE` is set; it does not assume a
 particular npm installation directory. OpenCode uses its own authenticated
 configuration and `BB_OPENCODE_EXECUTABLE` when provided.
 
+The live smoke used Codex 0.153.4, Claude Code 2.1.270, OpenCode 1.18.30 and
+DeepSeek Harness 0.1.5-rc.1. The tested npm-distributed components can be pinned:
+
+```powershell
+npm install --global @openai/codex@0.153.4 opencode-ai@1.18.30 @deepseek-ai/dsh@0.1.5-rc.1
+```
+
+These commands install software, not credentials. Claude Code was tested through
+its native executable. Authenticate each provider separately before the smoke.
+
 ZCode needs the separately built adapter and an authenticated native ZCode CLI:
 
 ```powershell
@@ -92,6 +102,27 @@ machine. Keep `ZCODE_ACP_CONFIG_PATH`, `ZCODE_ACP_MODEL` and any native CLI path
 override in local configuration. Never copy another user's authenticated ZCode
 configuration. The saved compatibility patch is experimental and pinned; later
 ZCode versions require revalidation. See [ZCode notes](docs/windows-zcode.md).
+
+For a fresh ACP configuration, after starting BB and adding its CLI to PATH:
+
+```powershell
+$agent = @{
+  id = 'zcode'
+  displayName = 'ZCode'
+  command = (Resolve-Path .runtime/zcode-acp/target/debug/zcode-acp.exe).Path
+  args = @()
+  env = @{
+    ZCODE_ACP_ZCODE_PATH = Join-Path $env:ProgramFiles 'ZCode/resources/glm/zcode.cjs'
+    ZCODE_ACP_CONFIG_PATH = Join-Path $env:USERPROFILE '.zcode/cli/config.json'
+    ZCODE_ACP_MODEL = 'zai/glm-5.3'
+  }
+}
+bb plugin config provider-acp set customAgents (ConvertTo-Json -InputObject @($agent) -Depth 4 -Compress)
+bb plugin reload
+```
+
+Adjust the native CLI location if installed elsewhere. This sets the complete
+custom-agent list; merge with existing entries when updating an existing setup.
 
 ## Selected distribution
 

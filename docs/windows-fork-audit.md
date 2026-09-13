@@ -1,7 +1,8 @@
 # Windows fork audit — 2026-09-13
 
-Release status: **not accepted for distribution**. This document records code and
-Git inspection, not acceptance claims inherited from earlier handoffs.
+Release status: **locally verified candidate; clean-machine acceptance pending**.
+The baseline findings below are historical; the verification record at the end
+states what was actually implemented and exercised during this task.
 
 ## Baseline
 
@@ -82,10 +83,93 @@ frozen lockfile and run the Windows acceptance suite before merging integration
 back. Colleagues update only from accepted fork releases, never directly from
 upstream. No force push is needed.
 
-## Remaining acceptance evidence
+## Implemented and verified
 
-Clean Windows installation; reproducible provider setup; singleton start under
-concurrency; recovery after server and daemon crashes; orderly stop and restart;
-five new-thread checks (Codex, Claude, ZCode, DeepSeek/OpenCode, DeepSeek/Harness);
-visible response without refresh; selected plugins/fonts; complete build and
-relevant tests; sanitized release payload and Git history review.
+The Windows launcher now uses a named mutex, hidden PowerShell supervisor,
+Windows Job Object and persistent graceful-stop request. Fresh data defaults to
+loopback binding and a per-user data directory outside Git. Install, dependency
+check, configuration example, update, lifecycle and provider-smoke scripts are
+under `scripts/windows/`; colleague commands are in `README.windows.md`.
+
+The CLI shim cannot fall through to daemon code. Windows Node re-execution,
+bundled npm invocation and asynchronous CLI error shutdown were corrected;
+the real HTTP error reproduction no longer aborts in libuv handle cleanup.
+Harness resolves an executable override or PATH and inherits the configured key.
+
+Selected payload: Codex, Claude, ACP routes for ZCode/OpenCode/Harness, PC Control,
+Workspace Explorer, Windows Screen, Git Graph, Monaco Markdown, native quota
+badge, themes and typography. Tasks, Taskboard, standalone Usage Tracker,
+Theme Preview, Project Preflight and API Tester are not bundled. Five copied
+TTFs were removed; local-font aliases fall back to pinned fontsource packages.
+
+| Check | Observed result |
+| --- | --- |
+| Isolated source preparation on Windows x64, Node 24.13.1, pnpm 9.15.0 | Passed |
+| Full installer in the sanitized release worktree | Passed with frozen lockfile and native SQLite prebuild repair |
+| CLI suite | 621 passed, 10 platform skips, one scaffold-build timeout in the full run; after a bounded timeout correction, all 10 tests in that file passed |
+| CLI Windows regressions | Source/package shim, extensionless re-exec and repeated HTTP failures passed in the suite |
+| App/theme/quota/realtime tests | 169 passed |
+| Selected plugin tests | 280 passed: PC Control 91, Git Graph 122, Monaco 44, Explorer 18, Screen 5 |
+| ACP tests | 18 passed, including inherited-key Harness launch and exit status |
+| Server provisioning/catalog/policy tests | 24 passed initially; all 32 plugin-policy tests passed after fixing stale expectations |
+| Portable path and audio fixtures | 62 app tests and 9 daemon tests passed |
+| Typechecks | CLI, server, daemon, app, ACP, Screen and Explorer passed |
+| Concurrent startup and crash recovery | Passed twice, including the final sanitized build: one server and daemon, recovery after killing each child and the runtime, stop, restart, no retained test listeners |
+| Real new threads | Codex, Claude, ZCode, OpenCode/DeepSeek and Harness/DeepSeek all returned their distinct requested markers |
+| Already-open chat | Codex follow-up submitted through Chrome UI; separate assistant marker appeared without navigation/reload and was confirmed in persisted CLI output |
+| UI panels | PC Control metrics, Explorer file listing, Markdown preview, stored Windows screenshot and Git Graph commit were observed; typography profiles and quota badge were visible |
+| Screenshot execution | Host plugin returned valid JPEG data at 1600 × 670; image stayed in local test evidence |
+| Compact PC Control | Corrected the desktop-pill breakpoint; 91 plugin tests passed, and an 800 × 600 browser check confirmed the Submit button receives the click |
+
+Tests used isolated data and a synthetic Git project. The existing user BB
+instance was not stopped or rebuilt. Test browser and BB listeners were closed.
+Raw logs, screenshots, provider model catalogs and test databases remain ignored
+local evidence; they are not committed or included in release history.
+
+## Release ancestry and security review
+
+`release/windows-candidate` starts at upstream merge base `267938526`, with a
+sanitized snapshot commit `777a76492`. Original `main` and its existing commits
+remain untouched. The release filter excluded 367 current paths and restored
+144 upstream source paths; it does not copy the private local commits. The
+release lockfile was regenerated in `433922857` (281 obsolete lines removed).
+Excluded upstream plugin maintenance sources can remain in Git while their
+runtime payloads are absent. Local Taskboard/Usage Tracker and diagnostic demos
+are absent from the candidate's selected delta.
+
+A pattern scan inspected 1092 text blobs unique to the old fork history and
+627 text blobs unique to the initial release candidate. Neither scan found
+known credential prefixes or new private-key blocks. The old history contained
+personal locations; the candidate scan found none of those locations. This is
+a targeted scan, not a guarantee that arbitrary secrets cannot exist. The two
+localhost PEM fixtures are inherited upstream test assets, not copied machine
+certificates. No tracked runtime DB/log was found or added.
+
+Only the release branch is suitable as the basis of a new repository; do not
+push `main`, all refs or the ignored runtime directories. Nothing was published,
+pushed, force-pushed or rebased.
+
+## Known limitations and remaining acceptance
+
+- A clean Windows VM installation has not been exercised. The clean worktree
+  still uses this host's installed prerequisites and authenticated providers.
+- ZCode smoke used the already-built pinned adapter. A fresh Rust build plus
+  fresh ZCode authentication remains a release check. Harness is a release
+  candidate version; provider updates require rerunning the smoke.
+- All five provider routes passed CLI creation/inference. Live browser delivery
+  was exercised for Codex, not separately for every provider or reconnect case.
+- The shell supervisor is not a Windows service or a scheduled boot task.
+  Recovery covers service/runtime crashes while the supervisor is running.
+- Browser checks covered desktop 1600 × 1100 and the corrected PC Control
+  interaction at 800 × 600. They are not an exhaustive responsive/iOS audit.
+- LAN authentication/TLS/firewall setup and Electron desktop packaging are outside
+  this candidate. LAN remains an explicit opt-in.
+- A trial merge of upstream `cf51227e1` produced conflicts in six app files and
+  the migration 0119 snapshot/journal. It was aborted cleanly. Resolve model
+  selection, timeline scrolling, thread-query/prompt changes, then regenerate
+  migrations rather than editing snapshots. The documented merge workflow
+  preserves ancestry; it does not promise conflict-free upstream updates.
+
+Release gate: finish the clean-machine and fresh-adapter checks, review any
+remaining private material and the distribution scope, then obtain explicit
+authorization to create/publish a separate repository.
