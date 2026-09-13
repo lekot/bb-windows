@@ -1,13 +1,13 @@
-# BB for Windows
+# bb для Windows
 
-**Public preview: verified on the development Windows PC; clean-machine acceptance is pending.**
-The current acceptance record is [Windows fork audit](docs/windows-fork-audit.md).
-This source distribution targets Windows x64 without WSL. It runs the web app,
-server and host-daemon; it does not package the upstream Electron desktop app.
+**Публичный предварительный выпуск: проверен на рабочем Windows-ПК; проверка на чистой машине ещё предстоит.** [Результаты приёмки](docs/windows-fork-audit.md).
 
-## Install
+Сборка предназначена для Windows x64 без WSL. Она запускает веб-интерфейс, сервер и host-daemon. Установщик Electron-приложения в неё не входит.
 
-Install Git, PowerShell 7, Node.js 22.19 or newer and the repository-pinned pnpm:
+<a id="install"></a>
+## Установка
+
+Установите Git, PowerShell 7 и Node.js 22.19 или новее. Используйте закреплённую в репозитории версию pnpm. Выполняйте команды в PowerShell 7:
 
 ```powershell
 npm install --global pnpm@9.15.0
@@ -17,14 +17,12 @@ pwsh -NoProfile -File scripts/windows/check.ps1
 pwsh -NoProfile -File scripts/windows/install.ps1
 ```
 
-Native dependencies use prebuilt packages when available. If the selected Node
-version has no matching native prebuild, compilation requires the relevant
-Windows C++ build tools and Python. Installation stops on failure; it must not be
-treated as successful merely because JavaScript dependencies were downloaded.
-Install/build in a stopped checkout. Keep a separate staging checkout when
-another instance is serving its existing build files.
+Для нативных зависимостей используются готовые бинарные пакеты, если они доступны. Если для выбранной версии Node нет подходящей сборки, потребуются инструменты сборки C++ для Windows и Python. Ошибка установки зависимости останавливает установку bb.
 
-## Start and stop
+Собирайте остановленный экземпляр. Если bb уже работает из этой папки, используйте отдельную копию исходников для проверки новой сборки.
+
+<a id="start-and-stop"></a>
+## Запуск, остановка и порты
 
 ```powershell
 pwsh -NoProfile -File scripts/windows/bb.ps1 -Action Start
@@ -32,22 +30,35 @@ pwsh -NoProfile -File scripts/windows/bb.ps1 -Action Status
 pwsh -NoProfile -File scripts/windows/bb.ps1 -Action Stop
 ```
 
-Open `http://127.0.0.1:38886`. The daemon uses port 38887. The launcher is hidden;
-a named Windows mutex prevents duplicate supervisors for the same data directory.
-BB supervises server/daemon exits; the outer supervisor restarts a failed BB
-runtime. A Windows Job Object contains its descendants. Stop requests allow
-graceful shutdown, with a 20-second bound before the owned job is terminated.
-Logs and the database stay under `%LOCALAPPDATA%\BBWindows`, outside the checkout.
-`Status` reports supervisor ownership, not provider health.
+После запуска откройте **http://127.0.0.1:38886**. Порт host-daemon — **38887**.
 
-Use `-DataDir`, `-ServerPort` and `-DaemonPort` for a separate instance. Supply the
-same data directory to Start, Stop, Status, Install and Update. Alternatively set
-`BB_WINDOWS_DATA_DIR`. Default access is loopback only. `-Lan` explicitly binds
-the server to all IPv4 interfaces; it does not configure TLS or Windows Firewall.
-Enable LAN access only after separately configuring access protection. No
-certificate, firewall rule or personal proxy configuration is installed.
+| Вариант запуска | Сервер | Host-daemon |
+| --- | --- | --- |
+| Публичный Windows-скрипт без дополнительных параметров | 38886 | 38887 |
+| Прежний локальный экспериментальный launcher | 48886 | 48887 |
+| Изолированная проверка запуска и восстановления | 49886 | 49887 |
 
-The CLI is separate from service lifecycle:
+Если старый локальный экземпляр открывается на 48886, он продолжает работать с прежними параметрами. Публикация исходников не меняет порт уже запущенного процесса. Значения в инструкции относятся к новому Windows-скрипту.
+
+Для явно заданных портов:
+
+```powershell
+pwsh -NoProfile -File scripts/windows/bb.ps1 -Action Start -ServerPort 48886 -DaemonPort 48887
+```
+
+Не запускайте второй экземпляр поверх занятого порта. Для отдельного экземпляра задайте также собственный `-DataDir`.
+
+Launcher работает скрыто. Именованный Windows mutex предотвращает повторный запуск supervisor для одного каталога данных. bb восстанавливает сервер и daemon после завершения их процессов; внешний supervisor перезапускает упавший runtime. Windows Job Object удерживает дочерние процессы в одной группе. Остановка сначала штатная; через 20 секунд оставшиеся процессы этой группы завершаются принудительно.
+
+Логи и база по умолчанию находятся в `%LOCALAPPDATA%\BBWindows`, вне репозитория. `Status` показывает наличие supervisor, а не состояние провайдеров. Supervisor не устанавливается как Windows-служба или задача автозапуска.
+
+При `Start`, `Stop`, `Status`, установке и обновлении указывайте один и тот же `-DataDir`. Вместо него можно задать `BB_WINDOWS_DATA_DIR`.
+
+Доступ по умолчанию разрешён только с локального компьютера. Параметр `-Lan` открывает сервер на всех IPv4-интерфейсах, но не настраивает авторизацию, TLS или брандмауэр. Настройте защиту доступа отдельно до включения LAN. Личные сертификаты, правила брандмауэра и прокси в сборку не входят.
+
+## Командная строка bb
+
+Управление службами выполняется через `bb.ps1`. Для команд bb используйте отдельный CLI:
 
 ```powershell
 & .\apps\host-daemon\dist\bb.cmd --help
@@ -55,37 +66,45 @@ $env:PATH = (Join-Path $PWD 'apps/host-daemon/dist') + ';' + $env:PATH
 bb status --json
 ```
 
-For custom server/daemon ports, set `BB_SERVER_URL` and `BB_HOST_DAEMON_PORT` in
-the CLI shell. The installer does not change your persistent PATH.
+При нестандартных портах задайте адреса и для CLI в текущем окне PowerShell:
 
-## Providers and credentials
+```powershell
+$env:BB_SERVER_URL = 'http://127.0.0.1:48886'
+$env:BB_HOST_DAEMON_PORT = '48887'
+bb status --json
+```
 
-Each colleague authenticates their own Codex and Claude CLI. Install OpenCode
-and DeepSeek Harness separately and configure their supported DeepSeek models.
-`check.ps1 -Providers` checks command presence, not authentication or inference.
-Use `bb provider list --json` and `bb provider models <id> --machine <id> --json`
-to inspect actual availability; select models from that machine's catalog.
+Для стандартного запуска используйте 38886 и 38887. Установщик не меняет постоянный PATH пользователя.
 
-Optional environment values are listed in
-[scripts/windows/.env.example](scripts/windows/.env.example). Copy it to a private
-file outside Git and start with `-EnvFile <path>`. Node loads it without printing
-its values. `DEEPSEEK_API_KEY` is inherited by Harness. Executable overrides
-accept executable paths, not shell command strings. Harness resolves `dsh.cmd`
-on PATH unless `BB_DEEPSEEK_HARNESS_EXECUTABLE` is set; it does not assume a
-particular npm installation directory. OpenCode uses its own authenticated
-configuration and `BB_OPENCODE_EXECUTABLE` when provided.
+<a id="providers-and-credentials"></a>
+## Провайдеры и авторизация
 
-The live smoke used Codex 0.153.4, Claude Code 2.1.270, OpenCode 1.18.30 and
-DeepSeek Harness 0.1.5-rc.1. The tested npm-distributed components can be pinned:
+Каждый пользователь самостоятельно авторизует Codex и Claude Code. OpenCode и DeepSeek Harness устанавливаются отдельно; для них нужно настроить используемые модели DeepSeek.
+
+```powershell
+pwsh -NoProfile -File scripts/windows/check.ps1 -Providers
+bb provider list --json
+bb provider models <id> --machine <id> --json
+```
+
+В командах замените `<id>` на идентификатор провайдера или машины. Проверка зависимостей проверяет наличие команд, но не авторизацию и не ответ модели. Выбирайте модели из каталога, который вернул ваш компьютер.
+
+В реальной проверке использовались Codex 0.153.4, Claude Code 2.1.270, OpenCode 1.18.30 и DeepSeek Harness 0.1.5-rc.1. Проверенные npm-компоненты можно установить так:
 
 ```powershell
 npm install --global @openai/codex@0.153.4 opencode-ai@1.18.30 @deepseek-ai/dsh@0.1.5-rc.1
 ```
 
-These commands install software, not credentials. Claude Code was tested through
-its native executable. Authenticate each provider separately before the smoke.
+Claude Code проверялся через нативный исполняемый файл. Установка программы не выполняет вход в аккаунт.
 
-ZCode needs the separately built adapter and an authenticated native ZCode CLI:
+[Пример переменных окружения](scripts/windows/.env.example) не содержит секретов. Скопируйте его в личный файл **вне Git** и передайте launcher параметр `-EnvFile <путь>`. Node загружает значения без их печати. Уже заданные переменные окружения имеют приоритет перед файлом.
+
+Harness получает `DEEPSEEK_API_KEY` из окружения и ищет `dsh.cmd` в PATH. Через `BB_DEEPSEEK_HARNESS_EXECUTABLE` можно задать другой путь. OpenCode использует собственную локальную авторизацию; `BB_OPENCODE_EXECUTABLE` задаёт его исполняемый файл. В переменных путей указывайте файл программы, а не строку shell-команды.
+
+<a id="zcode--glm"></a>
+## ZCode / GLM
+
+Нужны нативный CLI ZCode с вашей авторизацией, Rust/Cargo и инструменты линковки для Windows. Подготовьте адаптер на закреплённом коммите:
 
 ```powershell
 git clone https://github.com/jpalmae/zcode-acp .runtime/zcode-acp
@@ -95,15 +114,7 @@ git -C .runtime/zcode-acp apply $patch
 pwsh -File scripts/build-zcode-light.ps1
 ```
 
-This additionally requires Rust/Cargo and its Windows linker prerequisites.
-Configure the ACP plugin's `customAgents` setting with slug `zcode`, the built
-adapter's absolute executable path and the native CLI/config locations for that
-machine. Keep `ZCODE_ACP_CONFIG_PATH`, `ZCODE_ACP_MODEL` and any native CLI path
-override in local configuration. Never copy another user's authenticated ZCode
-configuration. The saved compatibility patch is experimental and pinned; later
-ZCode versions require revalidation. See [ZCode notes](docs/windows-zcode.md).
-
-For a fresh ACP configuration, after starting BB and adding its CLI to PATH:
+После запуска bb и добавления CLI в PATH настройте новый список пользовательских ACP-агентов:
 
 ```powershell
 $agent = @{
@@ -121,59 +132,56 @@ bb plugin config provider-acp set customAgents (ConvertTo-Json -InputObject @($a
 bb plugin reload
 ```
 
-Adjust the native CLI location if installed elsewhere. This sets the complete
-custom-agent list; merge with existing entries when updating an existing setup.
+Если ZCode установлен в другой каталог, измените путь к CLI. Команда заменяет **весь** список `customAgents`; при существующей настройке объедините запись с другими агентами. Не копируйте чужой файл авторизации ZCode.
 
-## Selected distribution
+Адаптер экспериментальный и закреплён на конкретной версии. Обновление ZCode требует повторной проверки совместимости. [Модели, изображения, отмена и ограничения](docs/windows-zcode.md).
 
-The prepared plugin payload includes PC Control, Workspace Explorer, Windows
-Screen, Git Graph and Monaco with Markdown preview, alongside core providers and
-support plugins. The built-in sidebar quota badge remains. Tasks, Taskboard,
-Usage Tracker, Theme Preview, Project Preflight and API Tester are not bundled.
-Some excluded upstream plugin sources remain in the maintenance checkout to
-preserve upstream integration; they are not installed into a fresh runtime.
-Do not copy an existing runtime database or plugin directory into a release.
+<a id="selected-distribution"></a>
+## Состав сборки
 
-Color themes and typography profiles remain. Inter, Golos Text and JetBrains
-Mono come from pinned fontsource packages. Fact, Frutiger, Crassula, Magistral and
-PT Mono can resolve only from fonts already installed by the user; the fork no
-longer bundles the copied TTFs with unverified distribution permissions.
+Включены PC Control, Workspace Explorer, Windows Screen, Git Graph и Monaco с предпросмотром Markdown, основные провайдеры и служебные плагины. Сохранена встроенная нижняя плашка лимитов.
 
-## Verify
+Tasks, Taskboard, отдельный Usage Tracker, Theme Preview, Project Preflight и API Tester не входят в комплект плагинов. Часть исходников upstream может оставаться в Git для сопровождения, но не устанавливается в новый runtime. Не переносите в распространяемую сборку существующую базу или каталог установленных плагинов.
 
-After preparing an isolated checkout:
+Сохранены темы и профили типографики. Inter, Golos Text и JetBrains Mono поставляются закреплёнными пакетами fontsource. Fact, Frutiger, Crassula, Magistral и PT Mono используются только при наличии у пользователя; иначе действуют запасные шрифты. Скопированные TTF с неподтверждёнными правами распространения удалены.
+
+<a id="verify"></a>
+## Проверки
+
+В подготовленной изолированной копии исходников:
 
 ```powershell
 pnpm exec turbo run test:windows:lifecycle
 pwsh -NoProfile -File scripts/windows/smoke-providers.ps1 -Project <SMOKE_PROJECT_ID>
 ```
 
-Lifecycle smoke uses separate temporary data and ports 49886/49887. It starts
-concurrently, kills only verified test-runtime children, checks recovery,
-stops, and restarts. Its logs remain at the printed test directory.
-Provider smoke creates real billable test threads through five routes:
-Codex, Claude, ZCode, DeepSeek/OpenCode and DeepSeek/Harness. A private copy of
-`providers.example.json` can pin model IDs selected from the live catalog.
-Passing CLI smoke does not prove that an already-open chat received its response;
-verify that separately in the browser without refreshing, plus each chosen plugin.
+Замените `<SMOKE_PROJECT_ID>` на идентификатор тестового проекта. Проверка жизненного цикла использует отдельные временные данные и порты 49886/49887: конкурентный запуск, падение сервера, daemon и runtime, восстановление, остановка и повторный запуск. Завершаются только процессы с подтверждённой принадлежностью тесту. Путь к логам печатается в конце.
 
-## Update and integrate upstream
+Проверка провайдеров создаёт реальные треды через Codex, Claude, ZCode, DeepSeek/OpenCode и DeepSeek/Harness и расходует их квоту. В личной копии `scripts/windows/providers.example.json` можно закрепить идентификаторы моделей из актуального каталога.
 
-Colleagues update from the approved fork remote, not directly from upstream:
+Ответ через CLI не доказывает доставку в открытое окно. Отдельно проверьте появление ответа в браузере без обновления страницы и работу выбранных плагинов.
+
+<a id="update-and-integrate-upstream"></a>
+## Обновление и синхронизация с upstream
+
+Пользователи обновляются из этого форка:
 
 ```powershell
 pwsh -NoProfile -File scripts/windows/update.ps1 -Remote origin -Branch main
 pwsh -NoProfile -File scripts/windows/bb.ps1 -Action Start
 ```
 
-Update requires a clean tree and a fast-forward. It fetches first, stops the
-selected instance, merges and prepares. It leaves BB stopped if preparation
-fails. Preserve your startup arguments when restarting; the updater does not
-silently reset custom ports or LAN selection. Back up the stopped data directory
-before updates involving database migrations; code rollback alone cannot undo a
-database migration.
+Обновление требует чистого Git-дерева и перехода fast-forward. Скрипт сначала получает изменения, затем останавливает выбранный экземпляр, применяет их и собирает bb. При ошибке подготовки bb остаётся остановленным.
 
-Maintainers integrate upstream in a separate branch/checkpoint:
+При повторном запуске сохраните свои `-DataDir`, порты, `-Lan` и `-EnvFile`. Перед обновлением с миграциями БД сделайте копию остановленного каталога данных: откат кода сам по себе не отменяет миграцию.
+
+Разработчики объединяют изменения upstream в отдельной ветке. Если remote `upstream` ещё не добавлен, выполните один раз:
+
+```powershell
+git remote add upstream https://github.com/get-bb/bb.git
+```
+
+Затем:
 
 ```powershell
 git fetch upstream main
@@ -181,20 +189,15 @@ git switch -c integrate/upstream-YYYY-MM-DD
 git merge --no-ff upstream/main
 ```
 
-Resolve conflicts, review the daemon protocol version and migrations, run the
-build/tests and Windows acceptance checks, then merge the reviewed integration
-branch into the fork. Do not rebase shared history or force-push.
+Замените `YYYY-MM-DD` на дату. Разрешите конфликты, проверьте версию протокола daemon и миграции, выполните сборку, тесты и Windows-приёмку. После проверки объедините интеграционную ветку с веткой форка. Не переписывайте общую историю и не используйте force push.
 
-The public preview repository is https://github.com/zr54211/bb-windows. Complete release and historical
-secret review before marking a stable release. The maintenance checkout's `origin` is not the distribution URL.
-Publishing Git history also publishes deleted files; exclusions from the current
-bundle cannot sanitize historical personal documents or credentials. No publish
-or push command is part of these scripts.
+Пробное слияние с `cf51227e1` выявило конфликты выбора модели, прокрутки истории, запросов треда, ввода сообщений и миграции 0119; проба отменена. Текущая основа — `267938526`. Снимок миграции Drizzle нужно перегенерировать после согласования схемы, а не исправлять JSON вручную.
 
-The published `main` comes from local `release/windows-candidate` and has upstream ancestry without the
-old private fork commits. The original maintenance checkout's `main` remains its private history and
-must not be used as the initial publication source. To prepare another snapshot
-from committed maintenance changes, choose a new branch name:
+## Подготовка новой исходной ветки
+
+Публичный репозиторий: https://github.com/zr54211/bb-windows. Его `main` получен из очищенной локальной ветки `release/windows-candidate`. Старый `main` рабочего репозитория содержит другую историю и не предназначен для публикации.
+
+Для новой исходной выборки из уже закоммиченных изменений используйте новое имя ветки:
 
 ```powershell
 node scripts/windows/prepare-release.mjs release/windows-YYYY-MM-DD
@@ -202,20 +205,10 @@ git worktree add ../bb-windows-release release/windows-YYYY-MM-DD
 cd ../bb-windows-release
 pnpm install --lockfile-only --ignore-scripts
 git add pnpm-lock.yaml
-git commit -m "Refresh release workspace lockfile"
+git commit -m "Обновить lockfile распространяемой сборки"
 pwsh -NoProfile -File scripts/windows/install.ps1
 ```
 
-Review `release-exclusions.json` and the resulting tree before distribution.
-The script restores excluded areas to the pinned upstream baseline, preserving
-upstream maintenance sources but discarding local experiments there. It creates
-a new ref only and refuses to overwrite an existing branch. Subsequent accepted
-release updates should be ordinary reviewed commits on the release branch, not
-repeated snapshot replacement. Do not push all branches or all refs.
+Проверьте `scripts/windows/release-exclusions.json` и получившееся дерево. Скрипт восстанавливает исключённые области до закреплённой основы upstream, не переносит локальные эксперименты и отказывается перезаписывать существующую ветку.
 
-A trial merge of upstream `cf51227e1` found conflicts in model selection,
-timeline scrolling, thread queries/prompt composition, and migration 0119.
-The trial was aborted. This candidate stays on baseline `267938526`; integrating
-those upstream changes requires resolving the contracts and regenerating the
-Drizzle migration snapshot, then running the affected tests. Never resolve the
-migration collision by manually editing snapshot JSON.
+Дальнейшие обновления опубликованной ветки делайте обычными проверенными коммитами. Не заменяйте её повторно снимком и не отправляйте все ветки, теги или refs. Удаление файла из текущего дерева не удаляет его из Git-истории. [Проверка секретов перед публикацией](docs/windows-publication-security.md).

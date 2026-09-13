@@ -1,21 +1,17 @@
-# Configuration
+# Конфигурация
 
-## Windows source distribution
+<a id="windows-source-distribution"></a>
+## Windows-сборка из исходников
 
-`scripts/windows/bb.ps1` is the Windows source lifecycle entrypoint. It defaults
-to loopback server port 38886, daemon port 38887, and `%LOCALAPPDATA%/BBWindows`.
-`BB_WINDOWS_DATA_DIR` or `-DataDir` selects instance storage; use the same value
-for start, stop, status and update. `-ServerPort`/`-DaemonPort` select ports and
-`-Lan` explicitly enables an all-interface IPv4 server listener. It does not
-install TLS or firewall rules. `-EnvFile` loads a private Node environment file.
-The launcher owns `BB_DATA_DIR`, `BB_SERVER_BIND_HOST`, `NODE_ENV` and
-`BB_TELEMETRY`; these values are not overridden by the file.
+Точка входа — `scripts/windows/bb.ps1`. По умолчанию сервер доступен только локально на порту 38886, daemon использует 38887, данные сохраняются в `%LOCALAPPDATA%/BBWindows`.
 
-Windows DeepSeek Harness inherits `DEEPSEEK_API_KEY` from the running process.
-It resolves `dsh.cmd` from PATH or uses `BB_DEEPSEEK_HARNESS_EXECUTABLE` (an
-executable path). OpenCode supports `BB_OPENCODE_EXECUTABLE`. Restart the Windows
-instance after changing launch-time environment variables. See
-[Windows README](../README.windows.md) for installation, update and smoke checks.
+`BB_WINDOWS_DATA_DIR` или `-DataDir` выбирает каталог данных экземпляра. Используйте одно значение при запуске, остановке, проверке состояния и обновлении. `-ServerPort` и `-DaemonPort` задают порты. `-Lan` открывает сервер на всех IPv4-интерфейсах, но не настраивает TLS, авторизацию или брандмауэр.
+
+`-EnvFile` загружает личный файл переменных окружения Node. Лаунчер сам задаёт `BB_DATA_DIR`, `BB_SERVER_BIND_HOST`, `NODE_ENV` и `BB_TELEMETRY`; файл не переопределяет эти значения.
+
+DeepSeek Harness наследует `DEEPSEEK_API_KEY` из окружения процесса и находит `dsh.cmd` через PATH. `BB_DEEPSEEK_HARNESS_EXECUTABLE` задаёт другой путь к программе. Для OpenCode используется `BB_OPENCODE_EXECUTABLE`. После изменения стартовых переменных перезапустите экземпляр.
+
+[Полная русская инструкция Windows: установка, конфигурация, провайдеры и обновление](../README.windows.md). Ниже сохранён технический справочник upstream на английском; команды установки npm-пакета относятся к отдельной поставке upstream.
 
 ## Packaged app configuration
 
