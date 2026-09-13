@@ -143,7 +143,7 @@ export function PcControlPill() {
             : ""
         }`}
         aria-label="PC Control — открыть панель"
-        className="fixed bottom-3 right-3 z-40 hidden items-center gap-2 rounded-full border border-border bg-background/90 px-2.5 py-1.5 shadow-lg backdrop-blur transition-colors hover:bg-accent/40 sm:flex"
+        className="fixed bottom-3 right-3 z-40 hidden items-center gap-2 rounded-full border border-border bg-background/90 px-2.5 py-1.5 shadow-lg backdrop-blur transition-colors hover:bg-accent/40 lg:flex"
       >
         <span
           aria-hidden="true"
@@ -178,7 +178,7 @@ export function PcControlPill() {
         title={`PC Control — открыть панель · ${summary}`}
         aria-label={`PC Control — открыть панель · ${summary}`}
         className={cn(
-          "fixed bottom-1 left-3 z-40 flex h-4 items-center gap-1.5 rounded-md sm:hidden",
+          "fixed bottom-1 left-3 z-40 flex h-4 items-center gap-1.5 rounded-md lg:hidden",
           dimmed && "opacity-60",
         )}
       >

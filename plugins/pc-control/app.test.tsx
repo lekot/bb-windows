@@ -173,10 +173,10 @@ describe("PC Control pill overlay", () => {
     const slot = renderPill();
     await slot.findByTestId("pc-pill");
     const edge = slot.getByTestId("pc-pill-edge");
-    expect(edge.className).toContain("sm:hidden");
+    expect(edge.className).toContain("lg:hidden");
     expect(edge.className).toContain("left-3");
     expect(edge.className).not.toContain("inset-x");
-    expect(slot.getByTestId("pc-pill").className).toContain("sm:flex");
+    expect(slot.getByTestId("pc-pill").className).toContain("lg:flex");
     expect(slot.getByTestId("pc-pill-edge-freshness").dataset.state).toBe(
       "fresh",
     );
