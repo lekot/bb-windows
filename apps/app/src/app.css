@@ -5,7 +5,7 @@
 
 @font-face {
   font-family: "BB Fact";
-  src: local("Fact");
+  src: url("./assets/fonts/minis/fact-regular.ttf") format("truetype");
   font-display: swap;
   font-style: normal;
   font-weight: 400;
@@ -13,7 +13,7 @@
 
 @font-face {
   font-family: "BB Frutiger";
-  src: local("Frutiger");
+  src: url("./assets/fonts/minis/frutiger.ttf") format("truetype");
   font-display: swap;
   font-style: normal;
   font-weight: 400;
@@ -21,7 +21,7 @@
 
 @font-face {
   font-family: "BB Crassula";
-  src: local("Crassula");
+  src: url("./assets/fonts/minis/crassula.ttf") format("truetype");
   font-display: swap;
   font-style: normal;
   font-weight: 400;
@@ -29,7 +29,7 @@
 
 @font-face {
   font-family: "BB Magistral";
-  src: local("Magistral Cond");
+  src: url("./assets/fonts/minis/magistral-cond.ttf") format("truetype");
   font-display: swap;
   font-style: normal;
   font-weight: 400;
@@ -37,7 +37,7 @@
 
 @font-face {
   font-family: "BB PT Mono";
-  src: local("PT Mono");
+  src: url("./assets/fonts/minis/pt-mono.ttf") format("truetype");
   font-display: swap;
   font-style: normal;
   font-weight: 400;

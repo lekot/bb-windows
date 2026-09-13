@@ -34,9 +34,7 @@
 - **[Markdown](plugins/monaco-editor/README.md)** — просмотр файлов и предпросмотр в редакторе Monaco.
 - **[Git Graph](plugins/git-graph/README.md)** — граф коммитов локального проекта.
 - **Лимиты провайдеров** — нижняя плашка в боковой панели.
-- **Темы и типографика** — выбранные профили оформления и шрифтов с открытыми fallback-шрифтами.
-
-Tasks, Taskboard, отдельный Usage Tracker, Theme Preview, Project Preflight и API Tester не входят в сборку плагинов.
+- **Темы и типографика** — наши профили оформления; Fact, Frutiger, Crassula, Magistral и PT Mono включены в сборку вместе с Inter, Golos Text и JetBrains Mono.
 
 ## Установка и запуск
 

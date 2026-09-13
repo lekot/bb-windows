@@ -60,7 +60,7 @@ Windows-сценарии и примеры находятся в `scripts/window
 
 Исправлены `bb.cmd`, повторный запуск CLI через Node, вызов npm на Windows и асинхронное завершение CLI после ошибок HTTP. Реальное воспроизведение HTTP-ошибки больше не завершалось аварией libuv. Harness использует заданный исполняемый файл или PATH и наследует ключ из окружения.
 
-Включены Codex, Claude, ACP-маршруты ZCode/OpenCode/Harness, PC Control, Explorer, Screen, Git Graph, Monaco Markdown, нижняя плашка лимитов, темы и типографика. Из комплекта исключены Tasks, Taskboard, отдельный Usage Tracker, Theme Preview, Project Preflight и API Tester. Пять скопированных TTF удалены, профили используют локальные шрифты и запасные fontsource-шрифты.
+Включены Codex, Claude, ACP-маршруты ZCode/OpenCode/Harness, PC Control, Explorer, Screen, Git Graph, Monaco Markdown, нижняя плашка лимитов, темы и типографика. Из комплекта исключены Tasks, Taskboard, отдельный Usage Tracker, Theme Preview, Project Preflight и API Tester. В первоначальном кандидате пять TTF были исключены. После отдельного согласования с пользователем Fact, Frutiger, Crassula, Magistral и PT Mono возвращены в сборку; CSS загружает их как ресурсы приложения.
 
 | Проверка | Наблюдаемый результат |
 | --- | --- |
